@@ -922,6 +922,8 @@ def _available_memory_gb() -> float:
         • macOS  — reclaimable memory via Mach ``host_statistics64`` (ctypes,
                    in-process, no subprocess); see ``_macos_available_memory_gb``.
                    No cgroups.
+        • Windows — ``GlobalMemoryStatusEx`` through
+                   ``platform_compat.host_available_mib``. No cgroups.
         • other  — no probe yet → ``-1.0`` (fail open).
 
     NOTE (adding a new OS): implement a ``_<os>_available_memory_gb()`` helper
@@ -939,8 +941,28 @@ def _available_memory_gb() -> float:
         return min(host_gb, cg_gb)
     if platform_compat.IS_MACOS:
         return _macos_available_memory_gb()
-    # Unsupported platform (e.g. Windows): no probe yet → fail open.
+    if platform_compat.IS_WINDOWS:
+        return _windows_available_memory_gb()
+    # Unsupported platform: no probe yet → fail open.
     return -1.0
+
+
+def _windows_available_memory_gb() -> float:
+    """Available memory (GB) on Windows, or ``-1.0`` when it cannot be read.
+
+    Delegates to ``platform_compat.host_available_mib`` instead of calling
+    ``GlobalMemoryStatusEx`` here. That shim is the single place the MiB unit
+    and the "0 means unreadable, never zero memory" contract are defined, and a
+    second reader would have to restate both to stay correct.
+
+    Without this branch the cap loses its memory term on Windows entirely and
+    falls open to ``_LEGACY_DEFAULT_MAX``, so a host with tens of GB free is
+    held to the same three concurrent sub-agents as an unmeasurable one.
+    """
+    available_mib = platform_compat.host_available_mib()
+    if available_mib <= 0:
+        return -1.0  # unreadable → caller fails open
+    return available_mib / 1024.0
 
 
 def _macos_vm_reclaimable_pages() -> Optional[int]:

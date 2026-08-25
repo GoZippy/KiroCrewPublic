@@ -506,9 +506,25 @@ class TestAvailableMemoryGb:
         monkeypatch.setattr(sa, "_macos_available_memory_gb", lambda: 3.5)
         assert sa._available_memory_gb() == 3.5
 
+    def test_windows_branch_delegates(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sa.platform_compat, "IS_LINUX", False, raising=False)
+        monkeypatch.setattr(sa.platform_compat, "IS_MACOS", False, raising=False)
+        monkeypatch.setattr(sa.platform_compat, "IS_WINDOWS", True, raising=False)
+        monkeypatch.setattr(sa.platform_compat, "host_available_mib", lambda: 8192)
+        assert sa._available_memory_gb() == 8.0
+
+    def test_windows_unreadable_fails_open(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``host_available_mib`` answers 0 for "cannot read", never "no memory"."""
+        monkeypatch.setattr(sa.platform_compat, "IS_LINUX", False, raising=False)
+        monkeypatch.setattr(sa.platform_compat, "IS_MACOS", False, raising=False)
+        monkeypatch.setattr(sa.platform_compat, "IS_WINDOWS", True, raising=False)
+        monkeypatch.setattr(sa.platform_compat, "host_available_mib", lambda: 0)
+        assert sa._available_memory_gb() == -1.0
+
     def test_unsupported_platform_fails_open(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(sa.platform_compat, "IS_LINUX", False, raising=False)
         monkeypatch.setattr(sa.platform_compat, "IS_MACOS", False, raising=False)
+        monkeypatch.setattr(sa.platform_compat, "IS_WINDOWS", False, raising=False)
         assert sa._available_memory_gb() == -1.0
 
 
