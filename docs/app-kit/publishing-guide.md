@@ -323,15 +323,17 @@ Code shipped inside the Kiro Crew package (a built-in app) is exempt, but every
 other app's **executable** surfaces refuse to run unless the operator sets
 `agent.apps_allow_third_party` to the JSON boolean `true` in `config.json`. That
 covers registry installs and their install scripts, `detectInstalled`, backend
-processes, in-gateway Python hooks, lifecycle scripts, and `openCommand`. Only
-the literal `true` admits: absence, a malformed value, and an unreadable config
-all deny, and the env is not consulted, so an app cannot widen the boundary from
-its own process.
+processes, in-gateway Python hooks, lifecycle scripts, `openCommand`, and the
+registration of the app's own MCP servers. Only the literal `true` admits:
+absence, a malformed value, and an unreadable config all deny, and the env is
+not consulted, so an app cannot widen the boundary from its own process.
 
-Non-executable resources (agents, skills, MCP server declarations, cron
-definitions, UI bundles) are unaffected. If your app needs any executable
-surface, say so in your README: a user who has not flipped the setting will see
-`app_execution_denied` rather than a working install.
+Non-executable resources (agents, skills, cron definitions, UI bundles) are
+unaffected. An MCP server declaration is **not** one of them: registering it is
+gated like a backend, because the server is app code that kiro-cli will run. If
+your app needs any executable surface, say so in your README: a user who has not
+flipped the setting will see `app_execution_denied` rather than a working
+install.
 
 Repository layout:
 
