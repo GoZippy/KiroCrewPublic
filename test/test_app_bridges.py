@@ -1623,6 +1623,48 @@ class TestStdioInterpreterResolution:
         assert entry["command"] == sys.executable
         assert entry["args"][:3] == ["-s", "-m", "kiro_crew"]
 
+    def test_stdio_entries_are_pinned_to_the_data_home_and_the_app_dir(
+        self, tmp_path, app_env, monkeypatch
+    ):
+        # kiro-cli ignores `cwd` and spawns with a stripped environment, and a
+        # manifest is authored before the install copy exists — so the declared
+        # env is the only way a bundled server can find its own files or this
+        # gateway's data home. Registration pins both, even when the manifest
+        # declares no env at all.
+        entry = self._register_stdio(
+            tmp_path, app_env, monkeypatch,
+            {"command": "python3", "args": ["-c", "import server"]},
+        )
+        assert entry["env"]["KIROCREW_HOME"] == str(app_env["home"])
+        assert entry["env"]["KIROCREW_APP_DIR"] == str(app_env["home"] / "apps" / "test-app")
+
+    def test_a_manifest_declared_pin_value_is_kept(self, tmp_path, app_env, monkeypatch):
+        # The pin is a default: an app that sets either key deliberately keeps
+        # it, its other declared keys survive, and the pin it did not set is
+        # still added.
+        entry = self._register_stdio(
+            tmp_path, app_env, monkeypatch,
+            {
+                "command": "python3",
+                "args": ["-m", "myapp.server"],
+                "env": {"KIROCREW_APP_DIR": "/elsewhere", "MYAPP_MODE": "dev"},
+            },
+        )
+        assert entry["env"]["KIROCREW_APP_DIR"] == "/elsewhere"
+        assert entry["env"]["MYAPP_MODE"] == "dev"
+        assert entry["env"]["KIROCREW_HOME"] == str(app_env["home"])
+
+    def test_an_http_entry_gets_no_env_pins(self, tmp_path, app_env, monkeypatch):
+        # An HTTP server is not spawned by kiro-cli, so there is no child to
+        # hand a path to; the pins are a stdio-only concern.
+        import kiro_crew.apps.backend as backend_mod
+
+        monkeypatch.setattr(backend_mod, "get_app_backend_port", lambda _n: 9000)
+        entry = self._register_stdio(
+            tmp_path, app_env, monkeypatch, {"url": "http://localhost:9000/mcp"}
+        )
+        assert "env" not in entry
+
     def test_an_http_entry_is_unaffected(self, tmp_path, app_env, monkeypatch):
         import kiro_crew.apps.backend as backend_mod
 

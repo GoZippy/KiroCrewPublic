@@ -57,6 +57,17 @@ installed against:
   app, server, and command is logged — the entry is still written.
 - The host CLI name `kirocrew` is pinned to the running gateway before any of
   the above applies.
+- **Two environment pins are added to every stdio entry** — `KIROCREW_HOME`
+  (the gateway's data home) and `KIROCREW_APP_DIR` (the app's installed root,
+  `<data home>/apps/<name>`) — unless the manifest declares them itself. They
+  are the only way a server bundled with the app can find its own files or
+  this gateway's data home: kiro-cli ignores `cwd`, spawns servers with a
+  stripped environment, and a manifest is authored before the install copy
+  exists. A launcher that needs the app root reads
+  `os.environ["KIROCREW_APP_DIR"]`; `KIROCREW_HOME` is the same value the
+  host CLI pin receives, so `kiro_crew.config.loader.config_dir()` in the
+  server agrees with the gateway. Neither key names a credential, so the MCP
+  gateway forwards them to a pooled backend like any other declared key.
 
 ## Scheduling
 

@@ -136,8 +136,19 @@ scrubs the app's entries out of the legacy shared file for every ENABLED app on
 every gateway start. Scrubbing only on deregister meant an already-enabled app
 kept leaking until the user happened to disable it.
 
+**Every stdio entry carries two env pins, `KIROCREW_HOME` and
+`KIROCREW_APP_DIR`.** kiro-cli ignores `cwd` and spawns servers with a stripped
+environment, and a manifest cannot name `<data home>/apps/<name>/` before the
+install exists, so without the pins a bundled server cannot locate its own files
+or the gateway's data home (its secret store, its config). Declared values win;
+the pins are defaults. Because they make every app stdio server env-declaring,
+the broker's `forward_declared_env` rule applies to it: on the default `true`
+the pins are forwarded to the pooled backend like any other non-credential key;
+on a stored `false` the server runs unwrapped, as any env-declaring server does
+there.
+
 Writer: `apps/bridges.py::_apply_agent_mcp_policy`, `_mcp_json_path`,
-`_scrub_legacy_shared_mcp`.
+`_scrub_legacy_shared_mcp`, `_pin_app_server_env`.
 
 ## 2. Auto-approve is intersected with the governance ceiling
 

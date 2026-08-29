@@ -2135,6 +2135,36 @@ def _schedule_unresolvable_warning(app_name: str, server_name: str, cfg: dict) -
     )
 
 
+_APP_SERVER_ENV_HOME = "KIROCREW_HOME"
+_APP_SERVER_ENV_DIR = "KIROCREW_APP_DIR"
+
+
+def _pin_app_server_env(app_name: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Give an app's stdio server the two paths its manifest cannot know.
+
+    A manifest is authored before the app is copied to ``<data home>/apps/<name>/``,
+    kiro-cli ignores ``cwd`` (see ``test_no_cwd_key_is_emitted_for_stdio_entries``)
+    and spawns MCP servers with a stripped environment — so a server bundled with
+    the app has no way to locate its own files, and one that must reach this
+    gateway's data home (its secret store, its config) has no way to find that
+    either. The declared ``env`` is the one channel that reaches the child, so
+    registration pins both: ``KIROCREW_HOME`` (the same value
+    :func:`_pin_host_cli_command` hands the host CLI) and ``KIROCREW_APP_DIR``
+    (the app's installed root). A manifest that declares either keeps its own
+    value — the pin is a default, never an override. A non-dict ``env`` is left
+    untouched so the consumer's own rejection stays the visible surface for the
+    config error, the same stance :func:`kiro_crew.env.emit_env` takes.
+    """
+    declared = cfg.get("env")
+    if declared is not None and not isinstance(declared, dict):
+        return cfg
+    env = dict(declared or {})
+    root = app_dir(app_name)
+    env.setdefault(_APP_SERVER_ENV_HOME, str(root.parent.parent))
+    env.setdefault(_APP_SERVER_ENV_DIR, str(root))
+    return {**cfg, "env": env}
+
+
 def _register_mcp_servers(
     app_name: str, manifest: AppManifest, live_port: int | None = None
 ) -> list[str]:
@@ -2196,6 +2226,10 @@ def _register_mcp_servers(
                 if isinstance(cfg, dict):
                     cfg = resolve_stdio_command(cfg, app_root=app_dir(app_name))
                     _schedule_unresolvable_warning(app_name, server_name, cfg)
+                    # The data home and the app root are the two paths a bundled
+                    # server needs and a manifest cannot name; kiro-cli ignores
+                    # `cwd` and strips the environment, so they travel as env.
+                    cfg = _pin_app_server_env(app_name, cfg)
                     # This file is consumed by kiro-cli, which applies a declared
                     # env per key — an app manifest naming a PATH fragment would
                     # hand its server that fragment as the WHOLE PATH. Emit
