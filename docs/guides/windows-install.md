@@ -282,8 +282,15 @@ distribution. **Never auto-selected**: the operator has to choose it
 explicitly, the same posture as the Kiro CLI delegation above (an explicit,
 positive choice, never inferred).
 
-Only the app-install / cron / hook call sites below actually change. Native
-Windows tools invoked directly — `git`, the AWS CLI, Papyrus's `tectonic`,
+**Restart the gateway after changing `agent.sandbox` to or from `"wsl2"`.**
+The backend is probed once and cached for the gateway's lifetime, so the new
+value is read at the next start, not at the next spawn. The distribution needs
+a `python3` on its PATH (the sandbox launcher runs under it); the probe checks
+for one and names it in the failure message when it is missing.
+
+Only the app-install / command-cron / hook call sites below actually change.
+Script cron jobs are a native-Windows Python invocation and stay on the
+`sandbox_allow_unsandboxed_exec` path. Native Windows tools invoked directly — `git`, the AWS CLI, Papyrus's `tectonic`,
 Piper — are unaffected either way: they are single portable-binary calls with
 no shell involved, so routing them through a Linux VM would buy no isolation
 and would need Windows↔WSL path translation for every argument, which is a
@@ -327,11 +334,16 @@ immediately, matching the existing Linux probe's own never-block-on-loop
 discipline; the next spawn after the thread finishes succeeds.
 
 If `wsl2` is selected but unavailable — WSL2 not installed, the named
-distribution doesn't exist, or its kernel refuses `unshare(CLONE_NEWUSER)` —
-the affected paths fail closed with a message naming the specific remedy
-(`wsl --install`, `wsl --install -d <name>`, or the same AppArmor-class
-guidance the native Linux path gives, since it is the same kernel mechanism
-one layer down), never silently falling through to unsandboxed execution.
+distribution doesn't exist, it has no `python3`, or its kernel refuses
+`unshare(CLONE_NEWUSER)` — the affected paths fail closed with a message naming
+the specific remedy (`wsl --install`, `wsl --install -d <name>`, install
+`python3` inside the distro, or lift the guest's AppArmor user-namespace
+restriction — `kernel.apparmor_restrict_unprivileged_userns` governs only the
+WSL2 VM, and the profile `kirocrew service install` ships on native Linux works
+inside the distro too), never silently falling through to unsandboxed
+execution. Launchers staged inside the distro remove themselves once loaded,
+and anything a crashed spawn left under `~/.kirocrew-sandbox-run/` is swept on
+the next spawn.
 
 ## Per-feature status on Windows
 
@@ -341,7 +353,7 @@ one layer down), never silently falling through to unsandboxed execution.
 | Project skills (`<project>/.kiro/skills`) | not yet — Python on Windows does not expose handle-relative directory traversal that can reject every reparse point before resolving it. Catalog, consent and loading fail closed before canonicalizing the project path, preventing a raced junction to a UNC share from initiating SMB authentication. Global and installed skills continue to work. |
 | Theme-pack install, detail, assets, overlays, topbars, and removal | works — opened pack files are contained with `GetFinalPathNameByHandleW`; descriptor resolution fails closed instead of trusting a pathname-only check |
 | LLM cron jobs (the `message` kind) | works |
-| Script cron jobs | need the `agent.sandbox_allow_unsandboxed_exec` opt-in above, **or `agent.sandbox: "wsl2"`** with a working WSL2 distribution (real isolation instead of none) — they run through `wrap_argv`, which fail-closes where no OS sandbox backend exists. Without either, the job fails with a message naming the remedy (it no longer raises an uncaught error) |
+| Script cron jobs | need the `agent.sandbox_allow_unsandboxed_exec` opt-in above — they run through `wrap_argv`, which fail-closes where no OS sandbox backend exists. **`agent.sandbox: "wsl2"` does not cover them**: a script cron is a native-Windows Python invocation, not a POSIX shell command, so the wsl2 backend reports itself unavailable for it and the job stays unsandboxed exactly as it was before wsl2 existed. Without the opt-in, the job fails with a message naming the remedy (it no longer raises an uncaught error) |
 | Command cron jobs (`sh -c "…"`) | not supported on Windows by default — the stored command is vetted under POSIX-sh semantics, and Windows ships no shell whose language matches: cmd.exe is not POSIX at all, and Git-for-Windows's `sh.exe` is bash and performs brace expansion that hides `cat ~/.a{w,w}s/credentials` from the vet. **`agent.sandbox: "wsl2"` is the one setting that unlocks this kind on Windows** — WSL2's `/bin/sh` is a real POSIX shell, so the vet gate's assumptions hold. Without it the job fails-closed with an explanation; use a **script cron** or an LLM `message` cron instead |
 | Script hooks (Settings → Hooks) | need the `agent.sandbox_allow_unsandboxed_exec` opt-in above (like script crons — the hook command routes through `wrap_argv`, which fail-closes where no OS sandbox backend exists; without it the hook returns that message as its `error`). With the opt-in they run in **cmd.exe** language: a hook `command` runs as `%ComSpec% /c "<command>"`, so read the context env vars as `%KIROCREW_HOOK_EVENT%` / `%KIROCREW_HOOK_CONTEXT%` (not `$VAR`), and group arguments with double quotes only (cmd.exe gives `'…'` no meaning). The line reaches cmd.exe verbatim, so a quoted interpreter path with a space works. A hook authored on macOS/Linux is not portable and must be rewritten this way. **With `agent.sandbox: "wsl2"` instead**, hooks run through the same `/bin/sh -c` form macOS/Linux use — `$KIROCREW_HOOK_EVENT` / `$KIROCREW_HOOK_CONTEXT`, real isolation — so a POSIX-shell hook needs no rewrite |
 | Pull-request source drawer provider fetch/check/resolve | not yet — and for a different reason than it used to be. The provider-CLI **trust** check now works here (see Issue Radar below), but the drawer does not share Issue Radar's spawn: it keeps its own async, sandbox-routed one (`source_providers._run_json`), which refuses on Windows because no OS sandbox backend exists. So the blocker is the sandbox, not the binary check |
