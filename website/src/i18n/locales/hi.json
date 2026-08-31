@@ -10562,6 +10562,7 @@
         "immediate_all_enforces_on_every_agent_kirocrew_o": "तुरंत लागू। 'all' हर एजेंट पर लागू करता है; 'kirocrew' केवल kirocrew.json पर।",
         "immediate_auto_approves_all_tools_interactive_as": "तुरंत लागू। 'auto' सभी टूल स्वीकृत करता है; 'interactive' हर बार पूछता है।",
         "immediate_auto_enables_sandbox_for_untrusted_too": "तुरंत लागू। 'auto' अविश्वसनीय टूल के लिए सैंडबॉक्स चालू करता है।",
+        "immediate_which_wsl2_distribution_to_sandbox_in": "तुरंत लागू। सैंडबॉक्स के लिए किस WSL2 डिस्ट्रिब्यूशन का उपयोग करना है — Docker Desktop के अपने यूटिलिटी इंस्टेंस यहाँ पेश नहीं किए जाते।",
         "inherited_provider": "इनहेरिटेड ({{provider}})",
         "kirocrew_agents": "{{productName}} एजेंट",
         "max_age_for_pooled_processes_0_disables_expiry_r": "पूल किए गए प्रोसेस की अधिकतम आयु। 0 से एक्सपायरी बंद हो जाती है। पुनः आरंभ आवश्यक।",
@@ -10600,7 +10601,9 @@
         "using_legacy_mode_agent_default_agent_as_agent_t": "लेगेसी मोड उपयोग में — एजेंट टेम्पलेट के रूप में agent.default_agent",
         "warm_pool": "वॉर्म पूल",
         "workspace": "वर्कस्पेस",
-        "workspaces": "वर्कस्पेस"
+        "workspaces": "वर्कस्पेस",
+        "wsl2_distribution": "WSL2 डिस्ट्रिब्यूशन",
+        "wsl_default_distro": "(WSL डिफ़ॉल्ट)"
       },
       "mcpTab": {
         "actions": "कार्रवाइयाँ",

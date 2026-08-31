@@ -10872,6 +10872,7 @@
         "immediate_all_enforces_on_every_agent_kirocrew_o": "Применяется сразу. 'all' — для всех агентов; 'kirocrew' — только для kirocrew.json.",
         "immediate_auto_approves_all_tools_interactive_as": "Применяется сразу. 'auto' — подтверждает все инструменты; 'interactive' — спрашивает перед каждым.",
         "immediate_auto_enables_sandbox_for_untrusted_too": "Применяется сразу. 'auto' — включает песочницу для недоверенных инструментов.",
+        "immediate_which_wsl2_distribution_to_sandbox_in": "Применяется сразу. Какой дистрибутив WSL2 использовать для песочницы — собственные служебные экземпляры Docker Desktop здесь не предлагаются.",
         "inherited_provider": "наследуется ({{provider}})",
         "kirocrew_agents": "Агенты {{productName}}",
         "max_age_for_pooled_processes_0_disables_expiry_r": "Максимальный срок жизни процессов в пуле. 0 отключает истечение. Требуется перезапуск.",
@@ -10910,7 +10911,9 @@
         "using_legacy_mode_agent_default_agent_as_agent_t": "Используется устаревший режим — agent.default_agent как шаблон агента",
         "warm_pool": "Тёплый пул",
         "workspace": "Рабочая область",
-        "workspaces": "Рабочие области"
+        "workspaces": "Рабочие области",
+        "wsl2_distribution": "Дистрибутив WSL2",
+        "wsl_default_distro": "(по умолчанию WSL)"
       },
       "mcpTab": {
         "actions": "Действия",

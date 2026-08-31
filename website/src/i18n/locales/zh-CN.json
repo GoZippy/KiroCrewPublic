@@ -10407,6 +10407,7 @@
         "immediate_all_enforces_on_every_agent_kirocrew_o": "立即生效。“all”对每个代理强制执行；“kirocrew”仅对 kirocrew.json 生效。",
         "immediate_auto_approves_all_tools_interactive_as": "立即生效。“auto”批准所有工具；“interactive”每次询问。",
         "immediate_auto_enables_sandbox_for_untrusted_too": "立即生效。“auto”为不受信任的工具启用沙箱。",
+        "immediate_which_wsl2_distribution_to_sandbox_in": "立即生效。选择用于沙盒的 WSL2 发行版——此处不提供 Docker Desktop 自身的实用工具实例。",
         "inherited_provider": "继承 ({{provider}})",
         "kirocrew_agents": "{{productName}} 代理",
         "max_age_for_pooled_processes_0_disables_expiry_r": "池化进程的最大存活时间。0 表示不过期。需要重启。",
@@ -10445,7 +10446,9 @@
         "using_legacy_mode_agent_default_agent_as_agent_t": "使用旧版模式 — 以 agent.default_agent 作为代理模板",
         "warm_pool": "预热池",
         "workspace": "工作区",
-        "workspaces": "工作区"
+        "workspaces": "工作区",
+        "wsl2_distribution": "WSL2 发行版",
+        "wsl_default_distro": "(WSL 默认)"
       },
       "mcpTab": {
         "actions": "操作",

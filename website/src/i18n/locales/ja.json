@@ -10407,6 +10407,7 @@
         "immediate_all_enforces_on_every_agent_kirocrew_o": "即座に実行。「all」はすべてのエージェントに適用、「kirocrew」は kirocrew.json のみに適用。",
         "immediate_auto_approves_all_tools_interactive_as": "即座に実行。「auto」がすべてのツールを承認、「interactive」は各ツール前に確認。",
         "immediate_auto_enables_sandbox_for_untrusted_too": "即座に実行。「auto」は信頼できないツールのサンドボックスを有効化。",
+        "immediate_which_wsl2_distribution_to_sandbox_in": "即座に実行。サンドボックスに使用する WSL2 ディストリビューションを選択します — Docker Desktop 独自のユーティリティインスタンスはここには表示されません。",
         "inherited_provider": "継承（{{provider}}）",
         "kirocrew_agents": "{{productName}} エージェント",
         "max_age_for_pooled_processes_0_disables_expiry_r": "プール済みプロセスの最大有効期間。0 は有効期限を無効化します。再起動が必要です。",
@@ -10445,7 +10446,9 @@
         "using_legacy_mode_agent_default_agent_as_agent_t": "レガシーモード使用中 — エージェントテンプレートとして agent.default_agent を使用",
         "warm_pool": "ウォームプール",
         "workspace": "ワークスペース",
-        "workspaces": "ワークスペース"
+        "workspaces": "ワークスペース",
+        "wsl2_distribution": "WSL2 ディストリビューション",
+        "wsl_default_distro": "(WSL のデフォルト)"
       },
       "mcpTab": {
         "actions": "アクション",

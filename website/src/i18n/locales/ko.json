@@ -10407,6 +10407,7 @@
         "immediate_all_enforces_on_every_agent_kirocrew_o": "즉시 적용됩니다. ‘all’은 모든 에이전트에, ‘kirocrew’는 kirocrew.json에만 적용합니다.",
         "immediate_auto_approves_all_tools_interactive_as": "즉시 적용됩니다. ‘auto’는 모든 도구를 승인하고, ‘interactive’는 도구마다 확인합니다.",
         "immediate_auto_enables_sandbox_for_untrusted_too": "즉시 적용됩니다. ‘auto’는 신뢰할 수 없는 도구에 샌드박스를 활성화합니다.",
+        "immediate_which_wsl2_distribution_to_sandbox_in": "즉시 적용됩니다. 샌드박스에 사용할 WSL2 배포판을 선택하세요 — Docker Desktop 자체 유틸리티 인스턴스는 여기에 표시되지 않습니다.",
         "inherited_provider": "상속됨 ({{provider}})",
         "kirocrew_agents": "{{productName}} 에이전트",
         "max_age_for_pooled_processes_0_disables_expiry_r": "풀링된 프로세스의 최대 수명. 0이면 만료를 비활성화합니다. 재시작이 필요합니다.",
@@ -10445,7 +10446,9 @@
         "using_legacy_mode_agent_default_agent_as_agent_t": "레거시 모드 사용 중 — agent.default_agent를 에이전트 템플릿으로 사용",
         "warm_pool": "웜 풀",
         "workspace": "워크스페이스",
-        "workspaces": "워크스페이스"
+        "workspaces": "워크스페이스",
+        "wsl2_distribution": "WSL2 배포판",
+        "wsl_default_distro": "(WSL 기본값)"
       },
       "mcpTab": {
         "actions": "동작",

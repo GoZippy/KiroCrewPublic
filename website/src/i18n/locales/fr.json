@@ -10717,6 +10717,7 @@
         "immediate_all_enforces_on_every_agent_kirocrew_o": "Immédiat. 'all' s'applique à tous les agents ; 'kirocrew' uniquement à kirocrew.json.",
         "immediate_auto_approves_all_tools_interactive_as": "Immédiat. 'auto' approuve tous les outils ; 'interactive' demande à chaque fois.",
         "immediate_auto_enables_sandbox_for_untrusted_too": "Immédiat. 'auto' active le sandbox pour les outils non fiables.",
+        "immediate_which_wsl2_distribution_to_sandbox_in": "Immédiat. Quelle distribution WSL2 utiliser pour l'isolement — les instances internes de Docker Desktop ne sont pas proposées ici.",
         "inherited_provider": "hérité ({{provider}})",
         "kirocrew_agents": "Agents {{productName}}",
         "max_age_for_pooled_processes_0_disables_expiry_r": "Âge maximal des processus du pool. 0 désactive l'expiration. Redémarrage requis.",
@@ -10755,7 +10756,9 @@
         "using_legacy_mode_agent_default_agent_as_agent_t": "Mode héritage — agent.default_agent comme modèle d'agent",
         "warm_pool": "Pool préchauffé",
         "workspace": "Espace de travail",
-        "workspaces": "Espaces de travail"
+        "workspaces": "Espaces de travail",
+        "wsl2_distribution": "Distribution WSL2",
+        "wsl_default_distro": "(Par défaut WSL)"
       },
       "mcpTab": {
         "actions": "Actions",
