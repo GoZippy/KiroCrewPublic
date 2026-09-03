@@ -124,7 +124,9 @@ def _resolve_safe_pgid(proc: subprocess.Popen) -> int | None:
     except (ProcessLookupError, PermissionError, OSError):
         return None
     if pgid <= 1 or pgid == os.getpgid(0):
-        logger.error("kill guard: refusing broadcast/self pgid %d for pid %d", pgid, pid)
+        logger.error(
+            "kill guard: refusing broadcast/self pgid %d for pid %d", pgid, pid
+        )
         return None
     return pgid
 
@@ -221,8 +223,7 @@ def _drain_after_kill(proc: subprocess.Popen, job_id: str | None) -> None:
         logger.warning(
             "Post-kill drain timed out (5s) for cron %s (pid %s); the child "
             "outlived SIGKILL or another process holds the pipe — closing pipes",
-            job_id,
-            proc.pid,
+            job_id, proc.pid,
         )
     finally:
         for pipe in (proc.stdout, proc.stderr):
@@ -287,7 +288,8 @@ class ScriptContext:
         # fallback for a directly-constructed context and is 5476 on a --port auto
         # gateway, which is a SIBLING rather than this instance.
         self._port = int(
-            os.environ.pop("_KIROCREW_DIAL_PORT", "") or os.environ.get("KIROCREW_PORT", "5476")
+            os.environ.pop("_KIROCREW_DIAL_PORT", "")
+            or os.environ.get("KIROCREW_PORT", "5476")
         )
         # Secret injected via temp file (not inherited env) to prevent privilege escalation.
         # Pop env var and unlink file immediately so fn(ctx) cannot access the secret directly.
@@ -693,7 +695,7 @@ def _split_script_spec(script_path: str) -> tuple[str, str]:
     func_colon = script_path.rfind(":")
     if func_colon == -1 or (drive_colon and func_colon == 1):
         raise ValueError(f"Invalid script path '{script_path}': expected 'path.py:func'")
-    return script_path[:func_colon], script_path[func_colon + 1 :]
+    return script_path[:func_colon], script_path[func_colon + 1:]
 
 
 def resolve_script_path(script_path: str) -> tuple[str, str]:
