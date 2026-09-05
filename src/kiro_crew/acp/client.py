@@ -1840,8 +1840,16 @@ def resolve_usable_model(preferred: str, advertised: Sequence[str] | None) -> st
         else ``""`` — exactly ``_wire_model_id``'s
         ``"auto" if "auto" in advertised else ""``;
       - concrete + usable             -> that id;
-      - concrete + not served         -> ``""`` (inherit the served default rather
-        than substituting a possibly-unavailable ``"auto"``).
+      - concrete, served only under its peeled spelling -> the ADVERTISED
+        spelling. A persisted pin can carry a stale ``<namespace>::<bare-id>``
+        qualifier while the session advertises the bare id (#8521's mismatch
+        class); the literal miss is retried through
+        :func:`resolve_pin_spelling`, and the fold's answer — not the caller's
+        spelling — goes on the wire, because the qualified spelling is one the
+        backend never advertised;
+      - concrete + not served under either spelling -> ``""`` (inherit the
+        served default rather than substituting a possibly-unavailable
+        ``"auto"``).
 
     The EXPLICIT user-pick paths do NOT use this: they ``raise``
     (``model_is_unusable``) so a user who chose a model sees an error, not a swap.
@@ -1857,7 +1865,11 @@ def resolve_usable_model(preferred: str, advertised: Sequence[str] | None) -> st
         return "auto" if not model_is_unusable("auto", ids) else ""
     if not model_is_unusable(preferred, ids):
         return preferred
-    return ""
+    # Literal miss: the pin may only differ by a stale ``<namespace>::``
+    # qualifier. The fold answers with the advertised spelling on a hit and
+    # ``""`` when the model is absent under both spellings — exactly the
+    # inherit-the-default answer this path wants.
+    return resolve_pin_spelling(preferred, ids)
 
 
 def _format_acp_error(error: object, available_models: Sequence[str] | None = None) -> str:

@@ -125,7 +125,9 @@ when done. See [acp-client.md](acp-client.md) for `AcpRuntime` /
 plus tips generation) express a `"auto"` model preference and pass it to a
 best-effort per-session `set_model`. The wire chokepoint
 (`AcpSessionHandle.set_model` → `resolve_usable_model`) mirrors the interactive
-`_wire_model_id`: it sends a served id, sends `"auto"` only when the backend
+`_wire_model_id`: it sends a served id (a persisted pin carrying a stale
+`<namespace>::` qualifier is folded to the advertised spelling via
+`resolve_pin_spelling`), sends `"auto"` only when the backend
 advertises it, and for anything else — `"auto"` where a partition doesn't serve
 it, or an unentitled concrete id — resolves to `""` and **skips the
 send**, inheriting the session's served backend default. So these tasks never

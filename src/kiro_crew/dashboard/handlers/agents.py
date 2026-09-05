@@ -38,6 +38,7 @@ from kiro_crew.agent_discovery import (
     spec_model,
     spec_str,
 )
+from kiro_crew.agent_sdk.drivers.acp import resolve_pin_spelling
 from kiro_crew.agent_sdk.provider_identity import is_claude_code
 from kiro_crew.apps.bridges import _mcp_lock as _agent_file_lock
 from kiro_crew.apps.bridges import _registration_source
@@ -1825,7 +1826,14 @@ def _entitled_kiro_models(request: web.Request, models: list[dict]) -> list[dict
     "this account can run" means. A local comparison would be a second spelling
     of that question — the exact drift that predicate exists to prevent — and any
     difference in how the two fold spelling variants shows up as a row the picker
-    offers and the wire then withholds.
+    offers and the wire then withholds. A literal miss is retried through
+    ``resolve_pin_spelling``, the same namespace fold the wire sites apply
+    before withholding — but the row is REWRITTEN to the advertised spelling
+    the fold answers with (and dropped when another row already offers that
+    spelling): the selection sinks (the agent/crew pin validator and
+    ``set_model``'s pre-flight) compare the picked value literally, so a row
+    must carry an id they accept verbatim, not the catalog's stale
+    ``<namespace>::<bare-id>`` qualifier it resolved from.
 
     The ``auto`` sentinel is never filtered: it means "inherit whatever the
     session already resolved", so it stays selectable even on a backend that does
@@ -1863,19 +1871,39 @@ def _entitled_kiro_models(request: web.Request, models: list[dict]) -> list[dict
     if not advertised:
         return models
     advertises_auto = any(_normalize_model_key(i) == "auto" for i in advertised)
-    kept = [
-        m
+    offered: set[str] = {
+        _normalize_model_key(m.get("model_name", ""))
         for m in models
         if _normalize_model_key(m.get("model_name", "")) == "auto"
         or not model_is_unusable(m.get("model_name", ""), advertised)
-    ]
+    }
+    kept: list[dict] = []
+    for m in models:
+        name = m.get("model_name", "")
+        if _normalize_model_key(name) == "auto" or not model_is_unusable(name, advertised):
+            kept.append(m)
+            continue
+        resolved = resolve_pin_spelling(name, advertised)
+        if not resolved:
+            continue
+        key = _normalize_model_key(resolved)
+        # Another row (literal or already-rewritten) offers this advertised
+        # spelling: emitting a second one would show duplicate rows for one
+        # model, so the qualified duplicate drops.
+        if key in offered:
+            continue
+        offered.add(key)
+        kept.append({**m, "model_name": resolved})
     # Tell "not comparable" apart from "entitled to almost nothing". A backend
     # that advertises `auto` shares a namespace with the catalog by definition, so
     # `auto` alone is a real answer — the most restricted tier there is — and must
     # narrow the picker to it. Only when nothing at all lines up, `auto` included,
     # is this a namespace mismatch (bare vs prefixed provider ids) where showing
     # the whole catalog beats emptying the picker. `auto` is always kept, so it can
-    # never serve as the evidence that the two sides are comparable.
+    # never serve as the evidence that the two sides are comparable. A row
+    # rewritten through the ``resolve_pin_spelling`` retry IS such evidence: a
+    # peeled match proves the two vocabularies line up once the qualifier is
+    # removed.
     if not advertises_auto and not any(
         _normalize_model_key(m.get("model_name", "")) != "auto" for m in kept
     ):
