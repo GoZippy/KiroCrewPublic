@@ -9889,6 +9889,10 @@
         "retry": "다시 시도",
         "set_is_fixed_at_gateway_start": "여기에 표시되는 에이전트는 gateway가 시작될 때 결정됩니다. 관리형 배포는 정책으로 이 집합을 제한할 수 있으며, 정책 변경은 다음 시작 시 적용됩니다."
       },
+      "debugToolsTab": {
+        "overlays_the_chat_with_live_scroll_and_anchor_dia": "실시간 스크롤 및 앵커 진단 정보를 채팅 위에 표시합니다",
+        "scroll_inspector": "스크롤 검사기"
+      },
       "featurePreviewsTab": {
         "chat_on_a_crew": "crew에서 채팅",
         "chat_on_a_crew_desc": "만들기 메뉴에 “New chat on crew”를 추가합니다. 연결된 crew에서 실행되는 세션을 시작합니다. 미완성입니다: 해당 crew의 자체 창에서 열리며, crew에서 실행 중인 세션은 아직 여기에 표시되지 않습니다.",
@@ -9913,6 +9917,10 @@
         "config": {
           "description": "{{productName}} 및 에이전트 구성 뷰어(읽기 전용)",
           "label": "설정"
+        },
+        "debugTools": {
+          "label": "디버그 도구",
+          "description": "앱 내부 동작을 실제 기기에서 그대로 보여 주는 오버레이입니다."
         },
         "featurePreviews": {
           "description": "아직 출시되지 않은 기능과 페이지입니다. 여기서 켜기 전에는 사이드바와 전체 검색에 표시되지 않습니다. 이 기기에만 적용되며, 의도적으로 미완성 상태입니다.",

@@ -892,6 +892,18 @@ export default [
               // inherit this by accident. One definition exists today, in
               // `src/apps/command-bar/contributedCommands.ts`, which renders nothing.
               '^warnContributionSkipped$',
+              // `scrollInspector.ts`'s diagnostic sink. `devLog(tag, detail)` writes a
+              // fixed-format line into a developer overlay -- `STORE.save 9020
+              // a-…794bcf@-471`, `WRITE reprice2 965->20211` -- read by comparing it
+              // against the same line in an earlier frame. Same class as
+              // `^console\\.\\w+$` above; translating it would destroy the only property
+              // that makes it useful, since the format IS the interface.
+              //
+              // A CALLEE exemption rather than a whole-file one, for the reason the
+              // ones above give. One definition exists, in `src/dev/scrollInspector.ts`,
+              // which renders no product copy: everything it draws is this diagnostic
+              // and it is inert unless a developer turns the overlay on.
+              '^devLog$',
               // Validator diagnostics, for parity with `Error` above. A rejected input's
               // reason names the FIELD that failed (`Missing or invalid "meta" field`,
               // `Invalid meta.format: "…" (expected "svg", "lottie", or "sprite")`) and
@@ -1129,6 +1141,26 @@ export default [
       // whole template sits under an ALL-CAPS declarator.
       'src/apps/crew-companion/styles.ts',
     ],
+    rules: {
+      'i18next/no-literal-string': 'off',
+    },
+  },
+
+  // The chat scroll inspector: a DEVELOPER OVERLAY, and every string it draws is a
+  // diagnostic whose FORMAT is the interface. Its readout is compared against the
+  // same readout in an earlier frame -- `to-end 24600px  rows=39  msgs=200/7417`,
+  // `WRITE reprice2 965->20211` -- so a localised copy would destroy the only
+  // property that makes it useful, the way a localised `console.log` would.
+  //
+  // Whole-file rather than callee-scoped, unlike `devLog` in `callees` above: the
+  // module also assigns its own `textContent` and `cssText` directly, and it meets
+  // the "verified copy-free" standard the exact-path precedents above are held to
+  // -- it renders NOTHING but this diagnostic, and it is inert unless a developer
+  // turns the overlay on (a module-level flag is read first by every entry point,
+  // so disabled means no element at all). Product copy added here later belongs in
+  // the catalog, not under this exemption; keep this module diagnostics-only.
+  {
+    files: ['src/dev/scrollInspector.ts'],
     rules: {
       'i18next/no-literal-string': 'off',
     },

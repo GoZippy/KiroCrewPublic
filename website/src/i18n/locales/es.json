@@ -10181,6 +10181,10 @@
         "retry": "Reintentar",
         "set_is_fixed_at_gateway_start": "Qué agentes aparecen aquí se decide al iniciar el gateway. Una implementación gestionada puede restringir el conjunto por política; editar esa política surte efecto en el siguiente inicio."
       },
+      "debugToolsTab": {
+        "overlays_the_chat_with_live_scroll_and_anchor_dia": "Superpone al chat un diagnóstico en vivo del desplazamiento y los anclajes",
+        "scroll_inspector": "Inspector de desplazamiento"
+      },
       "featurePreviewsTab": {
         "chat_on_a_crew": "Chatear en un Crew",
         "chat_on_a_crew_desc": "Añade “New chat on crew” al menú de creación, que inicia una sesión que se ejecuta en un Crew conectado. Sin terminar: se abre en el panel propio de ese Crew y las sesiones que se ejecutan en un Crew todavía no aparecen aquí.",
@@ -10205,6 +10209,10 @@
         "config": {
           "description": "Visores de configuración de {{productName}} y del agente (solo lectura)",
           "label": "Configuración"
+        },
+        "debugTools": {
+          "label": "Herramientas de depuración",
+          "description": "Superposiciones que muestran en el dispositivo lo que la aplicación hace consigo misma."
         },
         "featurePreviews": {
           "description": "Funciones y páginas sin publicar, ocultas de la barra lateral y de Buscar en todo hasta que las actives aquí. Solo para este dispositivo y sin terminar a propósito.",

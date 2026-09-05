@@ -9889,6 +9889,10 @@
         "retry": "重试",
         "set_is_fixed_at_gateway_start": "此处显示哪些 agent 在 gateway 启动时确定。受管部署可通过策略限制该集合；修改策略需下次启动才生效。"
       },
+      "debugToolsTab": {
+        "overlays_the_chat_with_live_scroll_and_anchor_dia": "在聊天上叠加实时滚动与锚点诊断信息",
+        "scroll_inspector": "滚动检查器"
+      },
       "featurePreviewsTab": {
         "chat_on_a_crew": "在 crew 上聊天",
         "chat_on_a_crew_desc": "在新建菜单里加入“New chat on crew”，用它创建的会话运行在已连接的 crew 上。尚未完善：它会打开该 crew 自己的面板，而运行在 crew 上的会话还不会显示在这里。",
@@ -9913,6 +9917,10 @@
         "config": {
           "description": "{{productName}} 和代理配置查看器（只读）",
           "label": "配置"
+        },
+        "debugTools": {
+          "label": "调试工具",
+          "description": "在真实设备上叠加显示应用内部行为的诊断浮层。"
         },
         "featurePreviews": {
           "description": "尚未发布的功能和页面。在此开启之前，它们不会出现在侧边栏和全局搜索中。设置仅对本设备生效，且这些内容有意保留未完善的状态。",

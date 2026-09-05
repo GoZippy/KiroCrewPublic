@@ -6490,6 +6490,10 @@
         "retry": "Retry",
         "set_is_fixed_at_gateway_start": "Which agents appear here is decided when the gateway starts. A managed deployment can restrict the set by policy; editing that policy takes effect on the next start."
       },
+      "debugToolsTab": {
+        "overlays_the_chat_with_live_scroll_and_anchor_dia": "Overlays the chat with live scroll and anchor diagnostics",
+        "scroll_inspector": "Scroll inspector"
+      },
       "featurePreviewsTab": {
         "crew": "Crew",
         "inbound_webhook_tokens_registered_contexts_and_r": "Inbound webhook tokens, registered contexts, and run history. The API works; the page is not finished.",

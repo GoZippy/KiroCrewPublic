@@ -209,7 +209,7 @@ from the header tab strip. Webhooks carries both a preview flag and
 
 ## Developer
 
-`/developer` (`pages/DeveloperPage.tsx`), ten `?tab=` values. Internals views;
+`/developer` (`pages/DeveloperPage.tsx`), eleven `?tab=` values. Internals views;
 not where a user manages their own data.
 
 | Tab | What it is | Page | Handler | Endpoints |
@@ -223,6 +223,7 @@ not where a user manages their own data.
 | `config` | Raw Kiro Crew and agent config editors | `pages/overview/KiroCrewCfgTab.tsx`, `AgentCfgTab.tsx` | `handlers/core.py`, `handlers/agents.py` | `GET,PUT,PATCH /api/config/kirocrew`, `GET,PUT /api/agent/config` |
 | `agent-backend` | Which agent harness backend is live | `pages/developer/AgentBackendTab.tsx` | `handlers/acp_backend_status.py`, `handlers/kiro_prerequisite.py` | `GET /api/acp-backends`, `GET /api/kiro-prerequisite` |
 | `feature-previews` | Toggle unreleased surfaces on | `pages/developer/FeaturePreviewsTab.tsx` | — (client flags) | — |
+| `debug-tools` | Diagnostic overlays, currently the chat scroll inspector | `pages/developer/DebugToolsTab.tsx` | — (client only) | — |
 | `archive` | Consolidated session archive browser | `pages/SessionArchive.tsx` | `handlers/sessions.py` | `GET /api/session/archive`, `GET /api/session/archive/{name}` |
 
 ## Standalone operator surfaces

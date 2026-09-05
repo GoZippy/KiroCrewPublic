@@ -3829,6 +3829,10 @@
           "description": "{{productName}} and agent configuration viewers (read-only)",
           "label": "Config"
         },
+        "debugTools": {
+          "label": "Debug tools",
+          "description": "Overlays that report what the app is doing to itself, on the device where it happens."
+        },
         "featurePreviews": {
           "description": "Unreleased features and pages, hidden from the sidebar and from Search Everywhere until you turn them on here. Per-device, and unpolished on purpose.",
           "label": "Feature Previews"

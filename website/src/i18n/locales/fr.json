@@ -10181,6 +10181,10 @@
         "retry": "Réessayer",
         "set_is_fixed_at_gateway_start": "Les agents affichés ici sont déterminés au démarrage du gateway. Un déploiement géré peut restreindre l'ensemble par politique ; modifier cette politique prend effet au prochain démarrage."
       },
+      "debugToolsTab": {
+        "overlays_the_chat_with_live_scroll_and_anchor_dia": "Superpose au chat un diagnostic en direct du défilement et des ancres",
+        "scroll_inspector": "Inspecteur de défilement"
+      },
       "featurePreviewsTab": {
         "chat_on_a_crew": "Discuter sur un Crew",
         "chat_on_a_crew_desc": "Ajoute « New chat on crew » au menu de création, qui démarre une session exécutée sur un Crew connecté. Inachevé : elle s’ouvre dans le panneau propre à ce Crew, et les sessions exécutées sur un Crew ne sont pas encore listées ici.",
@@ -10205,6 +10209,10 @@
         "config": {
           "description": "Visualiseurs de configuration de {{productName}} et de l'agent (lecture seule)",
           "label": "Configuration"
+        },
+        "debugTools": {
+          "label": "Outils de débogage",
+          "description": "Des surcouches qui montrent, sur l'appareil, ce que l'application se fait à elle-même."
         },
         "featurePreviews": {
           "description": "Fonctionnalités et pages non publiées, masquées dans la barre latérale et dans Rechercher partout jusqu'à ce que vous les activiez ici. Valable pour cet appareil uniquement, et inachevées à dessein.",
