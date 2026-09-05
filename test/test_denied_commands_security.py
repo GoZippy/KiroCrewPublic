@@ -4681,51 +4681,199 @@ class TestNestedPayloadExtractionIsLinear:
         for tokens, expected in self.SHAPES:
             assert security._nested_shell_payloads(list(tokens)) == expected, tokens
 
-    def test_the_scan_is_linear_not_quadratic(self):
-        """Asserted two ways, because either alone is weak: a doubling RATIO, which
-        catches the quadratic regardless of machine speed, and an absolute budget a
-        quadratic scan could not meet on any runner.
+    def test_the_scan_is_linear_not_quadratic(self, monkeypatch):
+        """What makes the scan linear is asserted DETERMINISTICALLY, not by timing.
+
+        A timed doubling ratio measures the runner, not the code: on a starved
+        shared Windows runner, scheduler noise alone produced a 3.1x ratio against
+        the 3x bound and false-redded a PR whose diff never touched this scan --
+        the same failure mode already evicted from
+        ``TestSelfModuleIndexIsLinear::test_the_scan_is_linear_not_quadratic`` and
+        ``test_a_chain_of_glued_redirects_is_linear``, whose structural strategy is
+        reused here.  A regression has to break one of these to reintroduce the
+        quadratic:
+
+          1. PRECOMPUTE ONCE PER CALL -- ``_next_stop_indexes`` runs exactly
+             TWICE per call (the env-split stop table and the past-the-dashes
+             run-skip table), however many tokens the command holds;
+          2. WORK PER TOKEN IS CONSTANT -- the ``_program_basename`` call count
+             grows as an exact arithmetic progression in the token count (equal
+             size steps produce equal call increments).  The quadratic this test
+             pins against re-walked the whole tail once per shell token, which
+             makes the increments themselves grow with the size and breaks the
+             progression;
+          3. NO PER-SHELL-TOKEN RE-WALK -- the ``_is_shell_command_flag`` and
+             ``_is_not_double_dash`` call counts each hold to an exact arithmetic
+             progression too.  These are the predicates a per-shell-token forward
+             re-walk has to re-consult once per walked token, so a regression to
+             the quadratic breaks their progressions even where the basename
+             count above stays linear.
+
+        One stated residual: a re-walk that INLINES the comparisons instead of
+        calling the named predicates is not observed by these counts.  The named
+        predicates are the contract that keeps the comparisons callable -- the
+        stop-table design exists precisely so every consult goes through them --
+        and the timing form this replaces could not reliably catch that shape
+        either (the ratio measured the runner, not the code).
+
+        No absolute wall-clock cap: coverage tracing on the backend jobs prices
+        line events, not algorithmic cost (#8630 precedent), and the counts see
+        every cost shape this function can otherwise regress to.
         """
-        import time
-
         from kiro_crew import security
 
-        def elapsed(n: int) -> float:
-            tokens = ["bash", "x"] * (n // 2)
-            start = time.perf_counter()
-            security._nested_shell_payloads(tokens)
-            return time.perf_counter() - start
+        real_stop_tables = security._next_stop_indexes
+        real_basename = security._program_basename
+        real_flag = security._is_shell_command_flag
+        real_dash = security._is_not_double_dash
+        counts = {"tables": 0, "basename": 0, "flag": 0, "dash": 0}
 
-        # Warm the interpreter so the first call's import/JIT noise is not measured.
-        elapsed(2000)
-        small, large = elapsed(8000), elapsed(16000)
-        # Linear doubles; the old quadratic quadrupled.  The bound is generous
-        # (3x for a 2x input) so scheduler noise on a shared runner cannot red it,
-        # while a quadratic scan's 4x cannot pass.
-        assert large < small * 3, f"{small:.4f}s -> {large:.4f}s looks super-linear"
-        # No absolute cap: coverage tracing on the backend jobs prices line
-        # events, not algorithmic cost (#8630 precedent); the ratio is the guard.
+        def counting_stop_tables(tokens: "list[str]", is_stop: object) -> "list[int]":
+            counts["tables"] += 1
+            return real_stop_tables(tokens, is_stop)  # type: ignore[arg-type]
 
-    def test_a_long_double_dash_run_is_also_linear(self):
+        def counting_basename(token: str) -> str:
+            counts["basename"] += 1
+            return real_basename(token)
+
+        def counting_flag(token: str) -> bool:
+            counts["flag"] += 1
+            return real_flag(token)
+
+        def counting_dash(token: str) -> bool:
+            counts["dash"] += 1
+            return real_dash(token)
+
+        monkeypatch.setattr(security, "_next_stop_indexes", counting_stop_tables)
+        monkeypatch.setattr(security, "_program_basename", counting_basename)
+        monkeypatch.setattr(security, "_is_shell_command_flag", counting_flag)
+        monkeypatch.setattr(security, "_is_not_double_dash", counting_dash)
+
+        def measured(n: int) -> "tuple[int, int, int, int]":
+            counts["tables"] = counts["basename"] = 0
+            counts["flag"] = counts["dash"] = 0
+            # The verdict must still be reached THROUGH the instrumented path, or
+            # the counts below are counting nothing.  The padding token is
+            # dash-prefixed so the flag predicate is genuinely consulted (a
+            # dash-free padding never reaches it and its progression would hold
+            # vacuously), but ``-x`` is not a command flag, herestring, or glued
+            # carrier, so the shape still yields no payload -- all cost, no
+            # output, the padding shape from the report.
+            assert security._nested_shell_payloads(["bash", "-x"] * (n // 2)) == []
+            return (
+                counts["tables"],
+                counts["basename"],
+                counts["flag"],
+                counts["dash"],
+            )
+
+        sizes = (2000, 4000, 6000)
+        results = [measured(n) for n in sizes]
+
+        # (1) The stop tables are built once per call, independent of size.
+        for tables, _, _, _ in results:
+            assert tables == 2, (
+                f"_next_stop_indexes ran {tables} times for one call -- the env "
+                "stop table and the past-the-dashes table are each built exactly "
+                "once; a per-token builder is the re-walk the precompute removed"
+            )
+
+        # (2) + (3) Per-token work is constant: equal size steps, equal call
+        # increments, for every instrumented cost (see the docstring for why each
+        # has teeth).  The progression form (rather than exact doubling) is
+        # deliberately immune to a constant per-call offset, so a benign refactor
+        # that adds one probe call does not false-red this test.
+        for name, floor, series in (
+            ("program-basename", sizes[0], [b for _, b, _, _ in results]),
+            ("command-flag-predicate", sizes[0] // 2, [f for _, _, f, _ in results]),
+            ("double-dash-predicate", sizes[0], [d for _, _, _, d in results]),
+        ):
+            assert series[0] >= floor, (
+                f"the instrument is not observing the path under test -- fewer "
+                f"{name} calls than expected means the scan never saw the tokens"
+            )
+            assert series[1] - series[0] == series[2] - series[1], (
+                f"{name} counts {series} are not an arithmetic progression -- the "
+                "per-token cost grows with the input, which is the super-linear "
+                "re-walk this precompute exists to prevent"
+            )
+
+    def test_a_long_double_dash_run_is_also_linear(self, monkeypatch):
         """The ``--`` skip after a command flag was a THIRD forward walk, and fixing
-        the two scans did not fix it: every program token found the same flag and then
-        re-walked the whole run, so ``$0 ... -c -- -- ...`` stayed quadratic (measured
-        4x per doubling) even with the scans linear."""
-        import time
+        the two scans did not fix it: every program token found the same flag and
+        then re-walked the whole run, so ``$0 ... -c -- -- ...`` stayed quadratic
+        (measured 4x per doubling) even with the scans linear.
 
+        Asserted DETERMINISTICALLY, not by timing (see
+        ``test_the_scan_is_linear_not_quadratic`` for the observed false-red).
+        The fixed code prices the ``--`` run ONCE, while it builds the
+        past-the-dashes table; the payload lookups after that are O(1) reads of
+        it.  A regression has to break one of these:
+
+          1. ``_next_stop_indexes`` runs exactly TWICE per call, however long
+             the run -- a rebuilt or per-program table breaks the constant;
+          2. the ``_is_not_double_dash`` call count grows as an exact arithmetic
+             progression in n -- the predicate is consulted once per token while
+             the table is built, but the third forward walk consulted it once
+             per run token PER program token, which makes the increments grow
+             with n and breaks the progression.
+
+        One stated residual, shared with ``test_the_scan_is_linear_not_quadratic``:
+        a re-walk that inlines the ``--`` comparison instead of calling the named
+        predicate is not observed by the count; the named predicate is the
+        contract that keeps the comparison callable.
+
+        No absolute wall-clock cap: coverage tracing on the backend jobs prices
+        line events, not algorithmic cost (#8630 precedent); the counts are the
+        guard.
+        """
         from kiro_crew import security
 
-        def elapsed(n: int) -> float:
-            tokens = ["$0"] * n + ["-c"] + ["--"] * n
-            start = time.perf_counter()
-            security._nested_shell_payloads(tokens)
-            return time.perf_counter() - start
+        real_stop_tables = security._next_stop_indexes
+        real_dash = security._is_not_double_dash
+        counts = {"tables": 0, "dash": 0}
 
-        elapsed(500)
-        small, large = elapsed(4000), elapsed(8000)
-        assert large < small * 3, f"{small:.4f}s -> {large:.4f}s looks super-linear"
-        # No absolute cap: coverage tracing on the backend jobs prices line
-        # events, not algorithmic cost (#8630 precedent); the ratio is the guard.
+        def counting_stop_tables(tokens: "list[str]", is_stop: object) -> "list[int]":
+            counts["tables"] += 1
+            return real_stop_tables(tokens, is_stop)  # type: ignore[arg-type]
+
+        def counting_dash(token: str) -> bool:
+            counts["dash"] += 1
+            return real_dash(token)
+
+        monkeypatch.setattr(security, "_next_stop_indexes", counting_stop_tables)
+        monkeypatch.setattr(security, "_is_not_double_dash", counting_dash)
+
+        def measured(n: int) -> "tuple[int, int]":
+            counts["tables"] = counts["dash"] = 0
+            # A ``--`` run that reaches the end of the list yields NOTHING
+            # (pinned in SHAPES): the whole traversal buys no payload, which is
+            # exactly the shape whose cost must not scale per program token.
+            tokens = ["$0"] * n + ["-c"] + ["--"] * n
+            assert security._nested_shell_payloads(tokens) == []
+            return counts["tables"], counts["dash"]
+
+        sizes = (2000, 4000, 6000)
+        results = [measured(n) for n in sizes]
+
+        for tables, _ in results:
+            assert tables == 2, (
+                f"_next_stop_indexes ran {tables} times for one call -- the "
+                "past-the-dashes table must be built exactly once, not rebuilt "
+                "per program token"
+            )
+
+        dashes = [d for _, d in results]
+        assert dashes[0] >= sizes[0], (
+            "the instrument is not observing the path under test -- fewer "
+            "double-dash-predicate calls than tokens means the table build "
+            "never consulted it"
+        )
+        assert dashes[1] - dashes[0] == dashes[2] - dashes[1], (
+            f"_is_not_double_dash counts {dashes} are not an arithmetic "
+            "progression -- the run is being re-walked per program token, which "
+            "is the third-forward-walk quadratic the precompute removed"
+        )
 
     def test_the_stop_predicates_match_the_handling(self):
         """The precomputed index and the branch taken at that index are two places
