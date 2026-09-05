@@ -3531,6 +3531,7 @@
       "loop_2": "Loop · {{count}}",
       "loop_interrupted": "interrupted",
       "running_queued": "{{started}} running · {{queued}} queued",
+      "show_all_older_sessions": "Show all older sessions",
       "show_in_flat_view": "Show {{name}} in flat view",
       "streaming": "Streaming",
       "all_sessions": "All sessions",

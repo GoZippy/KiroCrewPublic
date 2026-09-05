@@ -9741,6 +9741,7 @@
       "sessions": "Sessions",
       "show": "Afficher",
       "show_all_folders": "Afficher tous les dossiers",
+      "show_all_older_sessions": "Afficher toutes les anciennes sessions",
       "show_collapsed_folders": "Afficher les dossiers réduits :",
       "show_folder": "Afficher le dossier",
       "show_hidden_folder_many": "Afficher {{count}} dossiers masqués",

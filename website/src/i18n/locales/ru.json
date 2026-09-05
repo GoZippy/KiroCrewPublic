@@ -9882,6 +9882,7 @@
       "sessions": "Сессии",
       "show": "Показать",
       "show_all_folders": "Показать все папки",
+      "show_all_older_sessions": "Показать все старые сессии",
       "show_collapsed_folders": "Показывать свёрнутые папки:",
       "show_folder": "Показать папку",
       "show_hidden_folder_few": "Показать {{count}} скрытые папки",

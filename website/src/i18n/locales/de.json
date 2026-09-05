@@ -9600,6 +9600,7 @@
       "sessions": "Sitzungen",
       "show": "Anzeigen",
       "show_all_folders": "Alle Ordner anzeigen",
+      "show_all_older_sessions": "Alle älteren Sitzungen anzeigen",
       "show_collapsed_folders": "Eingeklappte Ordner anzeigen:",
       "show_folder": "Ordner anzeigen",
       "show_hidden_folder_one": "{{count}} ausgeblendeten Ordner anzeigen",

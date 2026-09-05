@@ -9741,6 +9741,7 @@
       "sessions": "Sessioni",
       "show": "Mostra",
       "show_all_folders": "Mostra tutte le cartelle",
+      "show_all_older_sessions": "Mostra tutte le sessioni più vecchie",
       "show_collapsed_folders": "Mostra le cartelle compresse:",
       "show_folder": "Mostra la cartella",
       "show_hidden_folder_many": "Mostra {{count}} cartelle nascoste",

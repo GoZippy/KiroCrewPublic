@@ -3233,6 +3233,30 @@ function ChatSidebar({
   }
   // ── end stale-session collapse ─────────────────────────────────────────────
 
+  // In-flow discovery affordance for the Older Sessions pane: a text row that
+  // follows the LAST session of a lane. It triggers the same action as the
+  // persistent footer, but answers a different question. The footer is a
+  // structural control pinned under the scroll area for a user who already
+  // knows the pane exists; this row sits where a user scanning the list runs
+  // out of rows without finding their chat — which is exactly where a session
+  // evicted from the open-tab list (idle eviction, restart, cleanup, a closed
+  // tab) has gone. A new user has no other cue that sessions move anywhere, so
+  // the row is what connects "my chat is gone" to "it is one click below".
+  // Hidden while the pane is open: the pane itself is then the continuation.
+  const renderOlderSessionsHint = (lane: string): React.ReactNode => {
+    if (historyOpen) return null
+    return (
+      <button
+        type="button"
+        data-testid={`older-sessions-hint-${lane}`}
+        onClick={() => { setHistoryOpen(true); dispatch(fetchHistory(false)) }}
+        className="mt-1 mx-1 px-2 py-1.5 text-left text-[12px] text-muted hover:text-accent hover:bg-accent-subtle rounded-md cursor-pointer bg-transparent border-none transition-colors"
+      >
+        {i18nT('pages.chatSidebar.show_all_older_sessions')}
+      </button>
+    )
+  }
+
   // Ranks up to the configured count of sessions by settled recency for the sidebar tint —
   // see ../utils/recencyTint. Count = server-side dashboard.recent_tint_count (shared
   // kirocrewConfig query); recomputes when the slots or the configured count change.
@@ -6611,6 +6635,7 @@ function ChatSidebar({
               {/* Flat view has no containers to anchor to — every hide, top-level
                *  or nested, collapses into this one row at the bottom of the lane. */}
               {renderHiddenReveal('flat', allHiddenFolders, 0)}
+              {renderOlderSessionsHint('flat')}
             </motion.div>
             {dragOverlay}
           </DndContext>
@@ -6690,6 +6715,9 @@ function ChatSidebar({
                                     return renderSessionRow(s, 0, showDivider, treeRootScope, treeRootScope, treeRootContainer)
                                   })}
                                   {renderStaleSection('root', staleRoot, 0)}
+                                  {/* After the dormant expander, so it stays the
+                                   *  lane's last line even when rows are folded. */}
+                                  {renderOlderSessionsHint('root')}
                                 </>
                               )
                             })()}

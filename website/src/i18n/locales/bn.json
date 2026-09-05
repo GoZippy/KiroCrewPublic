@@ -9600,6 +9600,7 @@
       "sessions": "সেশন",
       "show": "দেখাও",
       "show_all_folders": "সব ফোল্ডার দেখান",
+      "show_all_older_sessions": "সব পুরোনো সেশন দেখান",
       "show_collapsed_folders": "সংকুচিত ফোল্ডার দেখান:",
       "show_folder": "ফোল্ডার দেখান",
       "show_hidden_folder_one": "{{count}}টি লুকানো ফোল্ডার দেখান",

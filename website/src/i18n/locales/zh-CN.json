@@ -9459,6 +9459,7 @@
       "sessions": "会话",
       "show": "展开",
       "show_all_folders": "显示所有文件夹",
+      "show_all_older_sessions": "显示所有较早的会话",
       "show_collapsed_folders": "显示折叠的文件夹：",
       "show_folder": "显示文件夹",
       "show_hidden_folder_other": "显示 {{count}} 个隐藏的文件夹",

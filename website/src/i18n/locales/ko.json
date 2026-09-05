@@ -9459,6 +9459,7 @@
       "sessions": "세션",
       "show": "표시",
       "show_all_folders": "모든 폴더 표시",
+      "show_all_older_sessions": "이전 세션 모두 보기",
       "show_collapsed_folders": "접힌 폴더 표시:",
       "show_folder": "폴더 표시",
       "show_hidden_folder_other": "숨긴 폴더 {{count}}개 표시",

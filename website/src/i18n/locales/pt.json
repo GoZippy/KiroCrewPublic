@@ -9741,6 +9741,7 @@
       "sessions": "Sessões",
       "show": "Mostrar",
       "show_all_folders": "Mostrar todas as pastas",
+      "show_all_older_sessions": "Mostrar todas as sessões antigas",
       "show_collapsed_folders": "Mostrar pastas recolhidas:",
       "show_folder": "Mostrar pasta",
       "show_hidden_folder_many": "Mostrar {{count}} pastas ocultas",

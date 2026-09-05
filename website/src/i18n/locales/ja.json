@@ -9458,6 +9458,7 @@
       "sessions": "セッション",
       "show": "表示",
       "show_all_folders": "すべてのフォルダーを表示",
+      "show_all_older_sessions": "以前のセッションをすべて表示",
       "show_collapsed_folders": "折りたたんだフォルダーを表示:",
       "show_folder": "フォルダーを表示",
       "show_hidden_folder_other": "非表示フォルダー {{count}} 件を表示",
