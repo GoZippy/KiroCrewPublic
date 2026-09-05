@@ -3655,6 +3655,71 @@ def _should_suppress_requeue(slot) -> bool:
     return False
 
 
+# Retry cadence for a deferred project-change reset whose consume DECLINED
+# (busy channel turn, attached children). A dashboard slot gets its retry for
+# free at the next turn boundary, but a channel-linked slot's turns do not
+# pass through those boundaries — without an owned retry, a decline against a
+# busy channel session would leave the flag armed forever while the live
+# session keeps serving the old CWD. The retry is deliberately COEXTENSIVE
+# with the flag's lifetime: it exits only when the flag clears or the slot is
+# replaced, never on a clock — a channel turn can outlast any fixed budget,
+# and a timed-out retry would strand the old project permanently on a slot
+# with no other consume boundary. One sleep per tick per armed slot is the
+# whole cost; a stuck consume is surfaced by the periodic warning below.
+_PENDING_RESET_RETRY_DELAY_SECS = 5.0
+_PENDING_RESET_RETRY_WARN_EVERY = 120  # one warning per ~10 minutes armed
+# One retry task per slot key, deduped — a decline observed by the retry task
+# itself re-enters _arm_pending_reset_retry and must not stack a second task.
+_pending_reset_retries: dict[str, tuple["_ChatSlot", asyncio.Task]] = {}
+
+
+def _arm_pending_reset_retry(state: "DashboardState", slot: "_ChatSlot") -> None:
+    """Own the retry of a declined deferred reset (channel slots have no
+    turn-boundary consume, so somebody must).
+
+    Deduped by OWNER IDENTITY, not just key: a decline observed by the retry
+    task itself re-enters here and must not stack a second task, while a
+    REPLACEMENT slot under the same key must not be suppressed by a retiring
+    owner's still-live task — that task exits on its own identity check, and
+    its compare-and-pop cleanup cannot remove a successor's registration.
+    """
+    entry = _pending_reset_retries.get(slot.key)
+    if entry is not None and entry[0] is slot and not entry[1].done():
+        return
+
+    async def _retry() -> None:
+        ticks = 0
+        try:
+            while True:
+                await asyncio.sleep(_PENDING_RESET_RETRY_DELAY_SECS)
+                if state.get_slot(slot.key) is not slot:
+                    return  # slot deleted or replaced; nothing owed BY US
+                if not slot._pending_reset_history_key:
+                    return  # consumed by a turn boundary or eager consume
+                await _consume_pending_reset(state, slot)
+                if not slot._pending_reset_history_key:
+                    return
+                ticks += 1
+                if ticks % _PENDING_RESET_RETRY_WARN_EVERY == 0:
+                    logger.warning(
+                        "Pending project-change reset for slot %s still armed "
+                        "after %d retries; the owning session has stayed busy "
+                        "(or kept children attached) the whole time",
+                        slot.key,
+                        ticks,
+                    )
+        finally:
+            # Compare-and-pop: only remove OUR OWN registration — a
+            # replacement slot may have overwritten it while this task was
+            # winding down, and popping unconditionally would orphan the
+            # successor's dedupe entry.
+            current = _pending_reset_retries.get(slot.key)
+            if current is not None and current[1] is asyncio.current_task():
+                _pending_reset_retries.pop(slot.key, None)
+
+    _pending_reset_retries[slot.key] = (slot, asyncio.create_task(_retry()))
+
+
 async def _consume_pending_reset(
     state: DashboardState, slot: _ChatSlot, *, allow_discard: bool = False
 ) -> bool:
@@ -3713,28 +3778,91 @@ async def _consume_pending_reset(
     torn_down = False
     if slot._pending_reset_history_key:
         pending_key = slot._pending_reset_history_key
-        # This reset does not go through `_reset_slot_session`, so it drops the
-        # withhold verdict itself: a project change can resolve a different
-        # agent, and the next session may advertise a different model list. Done
-        # BEFORE the await and regardless of the outcome -- a teardown that
-        # failed leaves the session in a state this slot cannot vouch for, and
-        # "unknown" is the direction that fails open.
-        slot.record_model_withheld(None)
-        try:
-            await state.sessions.reset(pending_key)
-            torn_down = True
-            if slot._pending_reset_history_key == pending_key:
-                slot._pending_reset_history_key = None
-            # Freshness push for open tabs; verdict-driven, so a teardown that
-            # raised above never reaches it and a declined one broadcasts
-            # nothing (see _broadcast_expired_oauth_banners).
-            _broadcast_expired_oauth_banners(state, slot)
-        except Exception:
-            logger.warning(
-                "Failed to consume pending project-change reset for slot %s",
+        current_key = effective_session_key(slot)
+        if pending_key != current_key:
+            # The slot REBOUND after the flag was armed (a cron/workflow slot
+            # gets linked when its first result is injected; a channel link can
+            # land between arming and this consume). Resetting the stale key and
+            # clearing the flag would tear down a session nobody is on and let
+            # the slot's ACTUAL session keep the old CWD forever — the exact
+            # stale-binding class this deferral exists to remove. Re-arm to the
+            # current session so the reset lands where the turns run; the
+            # producer already validated the project change belongs to this
+            # slot, and re-pointing the key needs no re-authorization (it names
+            # the slot's own live session, not a new authority).
+            slot._pending_reset_history_key = current_key
+            _arm_pending_reset_retry(state, slot)
+            return torn_down
+        if subagents_attached(state, slot, pending_key, "consume_pending_reset"):
+            # Left armed on purpose, same as the discard branch below: the
+            # reset releases the shared runtime attached children run on, so
+            # applying it now would discard their work. The retry task owns
+            # the follow-up — children can outlive every turn boundary.
+            logger.debug(
+                "Deferring queued project-change reset for slot %s: sub-agents attached",
                 slot.key,
-                exc_info=True,
             )
+            _arm_pending_reset_retry(state, slot)
+        else:
+            try:
+                # skip_if_busy, for the same reason the discard branch below
+                # gives: the pending key can name a LIVE channel session (a
+                # linked slot's project change arms `slack:<ts>`), and a force
+                # reset here would tear the provider down under a streaming
+                # channel reply. The check and the teardown must be one atomic
+                # step under the session lock.
+                #
+                # The flag is spent ONLY on a real teardown (reset returned
+                # True). A False return cannot distinguish "nothing registered
+                # under the key" from a busy decline or a session that is
+                # COLD-STARTING and not yet registered — clearing on a probe
+                # that answered None would let a concurrent cold start carrying
+                # the old CWD register afterwards and serve the stale project
+                # with the flag already gone. Leaving it armed is always safe:
+                # the next consume lands it, at worst costing one redundant
+                # cold start after the reset tears down an already-correct
+                # idle session.
+                reset_ok = await state.sessions.reset(pending_key, skip_if_busy=True)
+            except Exception:
+                # A teardown that raised leaves the session in a state this
+                # slot cannot vouch for — neither is its withhold verdict, so
+                # drop it ("unknown" fails open), mirroring
+                # `_reset_slot_session`'s BaseException path. This reset does
+                # not go through that helper, so it owns the drop itself.
+                slot.record_model_withheld(None)
+                logger.warning(
+                    "Failed to consume pending project-change reset for slot %s",
+                    slot.key,
+                    exc_info=True,
+                )
+            else:
+                if reset_ok:
+                    # The verdict describes the session that advertised the
+                    # model list, and that session is gone. Dropped only on a
+                    # REAL teardown (or the raise above): a busy decline
+                    # leaves the session — and therefore its verdict — live
+                    # and accurate, and erasing it would let the dashboard
+                    # show a withheld model as available.
+                    slot.record_model_withheld(None)
+                    torn_down = True
+                    if slot._pending_reset_history_key == pending_key:
+                        slot._pending_reset_history_key = None
+                    # Freshness push for open tabs; verdict-driven (see
+                    # _broadcast_expired_oauth_banners).
+                    _broadcast_expired_oauth_banners(state, slot)
+                else:
+                    logger.debug(
+                        "Deferring queued project-change reset for slot %s: "
+                        "no teardown landed (busy, cold-starting, or no session)",
+                        slot.key,
+                    )
+                    # A channel-linked slot's turns never pass a dashboard
+                    # turn boundary, so a decline here would otherwise never
+                    # be retried and the live channel session would keep the
+                    # old CWD indefinitely. The bounded retry task owns the
+                    # follow-up (deduped; a decline observed by the task
+                    # itself does not stack a second one).
+                    _arm_pending_reset_retry(state, slot)
     if allow_discard and slot._pending_discard_conversation_key:
         discard_key = slot._pending_discard_conversation_key
         if subagents_attached(state, slot, discard_key, "consume_pending_discard"):
@@ -3967,6 +4095,15 @@ async def _eager_spawn(
             return
         async with _eager_spawn_sem:
             await _consume_pending_reset(state, slot)
+            if slot._pending_reset_history_key:
+                # The deferred reset could not land (busy channel turn,
+                # attached children, cold-starting session): pre-warming now
+                # would REUSE or register a session under a key whose
+                # teardown is still owed, and the first real turn would run
+                # on the stale bindings the armed flag exists to remove. The
+                # consumer's retry task owns the follow-up; eager spawn
+                # simply stands down.
+                return
             session_key = effective_session_key(slot)
             if allow_resume:
                 # The focus signal only ever adds the RESUME case; fresh eager

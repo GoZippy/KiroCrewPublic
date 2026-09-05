@@ -176,7 +176,7 @@ class TestEagerSpawn:
         state = _mock_state(slot)
         with patch.object(chat_runner.KiroCrewConfig, "load", _cfg(True)):
             await _eager_spawn(state, slot)
-        state.sessions.reset.assert_awaited_once_with("dashboard:t1")
+        state.sessions.reset.assert_awaited_once_with("dashboard:t1", skip_if_busy=True)
         assert slot._pending_reset_history_key is None
         state.sessions.get_or_create.assert_awaited_once()
 
@@ -496,6 +496,12 @@ class TestProjectSetWiring:
         state._slots = {slot.key: slot}
         state.push_slots_update = MagicMock()
         state.conversation_log = None  # instance attr; spec= does not provide it
+        # The switch handler re-probes the live session in a no-await window
+        # before the teardown (state.sessions.get_provider); sessions is an
+        # instance attr spec= does not synthesize. None = no live session, so
+        # the re-probe passes and the committed switch proceeds.
+        state.sessions = MagicMock()
+        state.sessions.get_provider = MagicMock(return_value=None)
         app = web.Application()
         app["state"] = state
         app.router.add_post("/api/chat/slots/{slot}/agent", api_chat_slot_agent)

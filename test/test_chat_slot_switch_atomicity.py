@@ -20,7 +20,10 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from kiro_crew.dashboard.chat import (
+    api_chat_slot_agent,
     api_chat_slot_model,
+    api_chat_slot_project,
+    api_chat_slot_reasoning_effort,
     api_chat_slot_workspace,
     api_chat_slots_model,
 )
@@ -48,6 +51,9 @@ def _make_app(state: DashboardState) -> web.Application:
     app.router.add_post("/api/chat/slots/model", api_chat_slots_model)
     app.router.add_post("/api/chat/slots/{slot}/model", api_chat_slot_model)
     app.router.add_post("/api/chat/slots/{slot}/workspace", api_chat_slot_workspace)
+    app.router.add_post("/api/chat/slots/{slot}/agent", api_chat_slot_agent)
+    app.router.add_post("/api/chat/slots/{slot}/reasoning-effort", api_chat_slot_reasoning_effort)
+    app.router.add_post("/api/chat/slots/{slot}/project", api_chat_slot_project)
     return app
 
 
@@ -979,6 +985,9 @@ def _make_app_as(state: DashboardState, app_name: str) -> web.Application:
     app.router.add_post("/api/chat/slots/model", api_chat_slots_model)
     app.router.add_post("/api/chat/slots/{slot}/model", api_chat_slot_model)
     app.router.add_post("/api/chat/slots/{slot}/workspace", api_chat_slot_workspace)
+    app.router.add_post("/api/chat/slots/{slot}/agent", api_chat_slot_agent)
+    app.router.add_post("/api/chat/slots/{slot}/reasoning-effort", api_chat_slot_reasoning_effort)
+    app.router.add_post("/api/chat/slots/{slot}/project", api_chat_slot_project)
     return app
 
 
@@ -1206,6 +1215,462 @@ class TestLinkedSlotSessionKey:
             assert resp.status == 409
             assert data["code"] == "session_rebound"
             assert (slot.workspace, slot.project) == (prior_ws, prior_project)
+
+    @pytest.mark.asyncio
+    async def test_agent_switch_resets_the_linked_session(self, monkeypatch):
+        # The reset targets the linked session; the transcript-metadata write
+        # stays HISTORY-keyed — it names the .jsonl the restart scan reads,
+        # not the live session (the _cancel_target history-vs-session split).
+        def _boom():
+            raise RuntimeError("config unreadable")
+
+        monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.KiroCrewConfig.load", _boom)
+        slot = _ChatSlot("test")
+        slot.agent = "old-agent"
+        slot.linked_session_key = "slack:123.456"
+        state = _mock_state(slot, provider=None)
+        state.sessions.reset = AsyncMock(return_value=True)
+        state.conversation_log = MagicMock()
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat/slots/test/agent", json={"agent": "new-agent"})
+            assert resp.status == 200
+            assert slot.agent == "new-agent"
+            assert state.sessions.reset.await_args.args[0] == "slack:123.456"
+            meta_call = state.conversation_log.update_metadata.call_args
+            assert meta_call.args[0] == "dashboard:test"
+
+    @pytest.mark.asyncio
+    async def test_agent_switch_sees_the_linked_sessions_active_turn(self):
+        # The busy probe lands on the live linked session: an in-flight
+        # channel turn answers 409 instead of tearing the turn (or a
+        # captured-identity session) down.
+        from kiro_crew.providers.acp import AcpProvider
+
+        slot = _ChatSlot("test")
+        slot.agent = "old-agent"
+        slot.linked_session_key = "slack:123.456"
+        provider = MagicMock(spec=AcpProvider)
+        provider.has_active_turn.return_value = True
+        state = _mock_state(slot, provider=None)
+        state.sessions.get_provider = MagicMock(
+            side_effect=lambda key: provider if key == "slack:123.456" else None
+        )
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat/slots/test/agent", json={"agent": "new-agent"})
+            data = await resp.json()
+            assert resp.status == 409
+            assert data["code"] == "turn_in_flight"
+            assert slot.agent == "old-agent"
+            state.sessions.reset.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_app_caller_cannot_switch_a_linked_sessions_agent(self):
+        # Owning the slot is not owning the channel session it is bound to:
+        # denied as an indistinguishable 404, nothing mutated.
+        slot = _ChatSlot("test")
+        slot.agent = "old-agent"
+        slot._app = "demo-app"
+        slot.linked_session_key = "slack:123.456"
+        state = _mock_state(slot, provider=None)
+        async with TestClient(TestServer(_make_app_as(state, "demo-app"))) as client:
+            resp = await client.post("/api/chat/slots/test/agent", json={"agent": "new-agent"})
+            assert resp.status == 404
+            assert slot.agent == "old-agent"
+            state.sessions.reset.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_rebind_during_reset_rolls_back_the_agent_switch(self, monkeypatch):
+        # The session torn down is no longer the slot's: the commit — the one
+        # case the agent handler's no-rollback rule unwinds — is rolled back,
+        # the metadata write never runs, and the caller retries against the
+        # current binding.
+        def _boom():
+            raise RuntimeError("config unreadable")
+
+        monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.KiroCrewConfig.load", _boom)
+        slot = _ChatSlot("test")
+        slot.agent = "old-agent"
+        state = _mock_state(slot, provider=None)
+        state.conversation_log = MagicMock()
+
+        async def _reset_and_rebind(*_a, **_k):
+            slot.linked_session_key = "cron:job-1"
+            return True
+
+        state.sessions.reset = AsyncMock(side_effect=_reset_and_rebind)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat/slots/test/agent", json={"agent": "new-agent"})
+            data = await resp.json()
+            assert resp.status == 409
+            assert data["code"] == "session_rebound"
+            assert slot.agent == "old-agent"
+            state.conversation_log.update_metadata.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_effort_switch_probes_and_resets_the_linked_session(self):
+        slot = _ChatSlot("test")
+        slot.linked_session_key = "slack:123.456"
+        state = _mock_state(slot, provider=None)
+        state.sessions.reset = AsyncMock(return_value=True)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post(
+                "/api/chat/slots/test/reasoning-effort", json={"reasoning_effort": "high"}
+            )
+            assert resp.status == 200
+            assert slot.reasoning_effort == "high"
+            probed = {c.args[0] for c in state.sessions.get_provider.call_args_list}
+            assert probed == {"slack:123.456"}
+            assert state.sessions.reset.await_args.args[0] == "slack:123.456"
+
+    @pytest.mark.asyncio
+    async def test_effort_switch_defers_on_the_linked_sessions_active_turn(self):
+        # The live-effort probe lands on the linked session, so its active
+        # turn takes the defer branch (commit now, live push next turn)
+        # instead of a reset against a session that never existed.
+        from kiro_crew.providers.acp import AcpProvider
+
+        slot = _ChatSlot("test")
+        slot.linked_session_key = "slack:123.456"
+        provider = MagicMock(spec=AcpProvider)
+        provider.supports_effort.return_value = True
+        provider.has_active_turn.return_value = True
+        state = _mock_state(slot, provider=None)
+        state.sessions.get_provider = MagicMock(
+            side_effect=lambda key: provider if key == "slack:123.456" else None
+        )
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post(
+                "/api/chat/slots/test/reasoning-effort", json={"reasoning_effort": "high"}
+            )
+            data = await resp.json()
+            assert resp.status == 200
+            assert data["deferred"] is True
+            assert slot.reasoning_effort == "high"
+            state.sessions.reset.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_app_caller_cannot_switch_a_linked_sessions_effort(self):
+        slot = _ChatSlot("test")
+        slot._app = "demo-app"
+        slot.linked_session_key = "slack:123.456"
+        state = _mock_state(slot, provider=None)
+        async with TestClient(TestServer(_make_app_as(state, "demo-app"))) as client:
+            resp = await client.post(
+                "/api/chat/slots/test/reasoning-effort", json={"reasoning_effort": "high"}
+            )
+            assert resp.status == 404
+            assert slot.reasoning_effort == ""
+            state.sessions.reset.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_rebind_during_reset_rolls_back_the_effort_switch(self):
+        slot = _ChatSlot("test")
+        state = _mock_state(slot, provider=None)
+
+        async def _reset_and_rebind(*_a, **_k):
+            slot.linked_session_key = "cron:job-1"
+            return True
+
+        state.sessions.reset = AsyncMock(side_effect=_reset_and_rebind)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post(
+                "/api/chat/slots/test/reasoning-effort", json={"reasoning_effort": "high"}
+            )
+            data = await resp.json()
+            assert resp.status == 409
+            assert data["code"] == "session_rebound"
+            assert slot.reasoning_effort == ""
+
+    @pytest.mark.asyncio
+    async def test_project_set_defers_the_reset_under_the_linked_session_key(self, tmp_path):
+        # The deferred-reset flag carries the linked key (the key the app
+        # gate authorized), so the chat_runner consumer tears down the
+        # session the slot actually runs on — not dashboard:<slot>.
+        import os
+
+        slot = _ChatSlot("test")
+        slot.project = "/workspace/old-ws"
+        slot.linked_session_key = "slack:123.456"
+        state = _mock_state(slot)
+        new_dir = os.path.realpath(str(tmp_path))
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat/slots/test/project", json={"project": new_dir})
+            assert resp.status == 200
+            assert slot.project == new_dir
+            assert slot._pending_reset_history_key == "slack:123.456"
+
+    @pytest.mark.asyncio
+    async def test_app_caller_cannot_set_a_linked_sessions_project(self, tmp_path):
+        import os
+
+        slot = _ChatSlot("test")
+        slot.project = "/workspace/old-ws"
+        slot._app = "demo-app"
+        slot.linked_session_key = "slack:123.456"
+        state = _mock_state(slot)
+        new_dir = os.path.realpath(str(tmp_path))
+        async with TestClient(TestServer(_make_app_as(state, "demo-app"))) as client:
+            resp = await client.post("/api/chat/slots/test/project", json={"project": new_dir})
+            assert resp.status == 404
+            assert slot.project == "/workspace/old-ws"
+            assert not slot._pending_reset_history_key
+
+    @pytest.mark.asyncio
+    async def test_agent_reset_declined_busy_rolls_back_and_answers_409(self, monkeypatch):
+        # A turn can start after the last-instant re-check (message dispatch
+        # does not take slot._lock): the reset runs with skip_if_busy=True and
+        # its atomic decline is authoritative — the committed agent is rolled
+        # back, the metadata write never runs, and the in-flight turn survives.
+        from kiro_crew.providers.base import LLMProvider
+
+        def _boom():
+            raise RuntimeError("config unreadable")
+
+        monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.KiroCrewConfig.load", _boom)
+        slot = _ChatSlot("test")
+        slot.agent = "old-agent"
+        state = _mock_state(slot)
+        state.conversation_log = MagicMock()
+        busy = MagicMock(spec=LLMProvider)
+        # Idle at the pre-commit check and the last-instant re-check (so the
+        # handler proceeds into the reset), mid-turn at the post-decline
+        # re-read: the turn slipped into the reset's own entry window.
+        busy.has_active_turn.side_effect = [False, False, True]
+        state.sessions.get_provider = MagicMock(return_value=busy)
+        state.sessions.reset = AsyncMock(return_value=False)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat/slots/test/agent", json={"agent": "new-agent"})
+            data = await resp.json()
+            assert resp.status == 409
+            assert data["code"] == "turn_in_flight"
+            assert slot.agent == "old-agent"
+            assert state.sessions.reset.await_args.kwargs == {"skip_if_busy": True}
+            state.conversation_log.update_metadata.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_effort_reset_declined_busy_rolls_back_and_answers_409(self):
+        from kiro_crew.providers.base import LLMProvider
+
+        slot = _ChatSlot("test")
+        state = _mock_state(slot)
+        busy = MagicMock(spec=LLMProvider)
+        # Idle at the pre-reset re-check, mid-turn at the post-decline
+        # re-read: the turn slipped into the reset's own entry window.
+        busy.has_active_turn.side_effect = [False, True]
+        state.sessions.get_provider = MagicMock(return_value=busy)
+        state.sessions.reset = AsyncMock(return_value=False)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post(
+                "/api/chat/slots/test/reasoning-effort", json={"reasoning_effort": "high"}
+            )
+            data = await resp.json()
+            assert resp.status == 409
+            assert data["code"] == "turn_in_flight"
+            assert slot.reasoning_effort == ""
+            assert state.sessions.reset.await_args.kwargs == {"skip_if_busy": True}
+
+    @pytest.mark.asyncio
+    async def test_rebind_during_metadata_persist_rolls_back_and_answers_409(self, monkeypatch):
+        # The metadata write awaits AFTER the post-reset rebound guard, so a
+        # binding landing there must be caught by a second re-validation —
+        # otherwise the switch answers 200 while the linked session keeps the
+        # old agent. The rollback also restores the transcript metadata the
+        # write just persisted, so the 409's "nothing changed" is true.
+        def _boom():
+            raise RuntimeError("config unreadable")
+
+        monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.KiroCrewConfig.load", _boom)
+        slot = _ChatSlot("test")
+        slot.agent = "old-agent"
+        state = _mock_state(slot, provider=None)
+        state.sessions.reset = AsyncMock(return_value=True)
+        log = MagicMock()
+
+        def _persist_and_rebind(_key, _meta):
+            if not slot.linked_session_key:
+                slot.linked_session_key = "cron:job-1"
+
+        log.update_metadata = MagicMock(side_effect=_persist_and_rebind)
+        state.conversation_log = log
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat/slots/test/agent", json={"agent": "new-agent"})
+            data = await resp.json()
+            assert resp.status == 409
+            assert data["code"] == "session_rebound"
+            assert slot.agent == "old-agent"
+            # The restore wrote the rolled-back agent back into the
+            # transcript metadata (last call).
+            assert log.update_metadata.call_args.args[1] == {"agent": "old-agent"}
+
+    @pytest.mark.asyncio
+    async def test_concurrent_same_agent_write_survives_the_rollback(self, monkeypatch):
+        # An unlocked writer (openai_compat / members / in-turn directive)
+        # can write the SAME agent name during this handler's reset await and
+        # dispatch on it. The rollback is gated on the write GENERATION, not
+        # the value, so that concurrent write takes ownership and the
+        # rollback stands down — a value compare-and-set would restore the
+        # old agent over a dispatch already running the new one.
+        def _boom():
+            raise RuntimeError("config unreadable")
+
+        monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.KiroCrewConfig.load", _boom)
+        slot = _ChatSlot("test")
+        slot.agent = "old-agent"
+        state = _mock_state(slot, provider=None)
+        state.conversation_log = MagicMock()
+
+        async def _reset_concurrent_write_and_rebind(*_a, **_k):
+            # The concurrent same-value write, then the rebind that forces
+            # this request onto its rollback path.
+            slot.agent = "new-agent"
+            slot.linked_session_key = "cron:job-1"
+            return True
+
+        state.sessions.reset = AsyncMock(side_effect=_reset_concurrent_write_and_rebind)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat/slots/test/agent", json={"agent": "new-agent"})
+            data = await resp.json()
+            assert resp.status == 409
+            assert data["code"] == "session_rebound"
+            # The concurrent writer's value survives; only OUR commit unwinds.
+            assert slot.agent == "new-agent"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_same_project_write_survives_the_rollback(self, monkeypatch):
+        # The in-turn set_project directive can write the VERY project this
+        # handler derived, during the reset await. The rollback is gated on
+        # each field's commit-token identity, so that successful concurrent
+        # write survives — a value compare-and-set would erase it back to the
+        # pre-switch project.
+        mock_cfg = MagicMock()
+        mock_cfg.agents = {}
+        monkeypatch.setattr(
+            "kiro_crew.dashboard.chat_handlers.KiroCrewConfig.load", lambda: mock_cfg
+        )
+        monkeypatch.setattr(
+            "kiro_crew.dashboard.chat_handlers.warm_project_agent_names", AsyncMock()
+        )
+        monkeypatch.setattr(
+            "kiro_crew.dashboard.chat_handlers.resolve_agent_bindings",
+            lambda cfg, name, project_dir=None: MagicMock(workspace_dir="/tmp/ws2"),
+        )
+        monkeypatch.setattr(
+            "kiro_crew.dashboard.chat_handlers._workspace_name_for_dir",
+            lambda cfg, ws_dir: "ws2",
+        )
+        monkeypatch.setattr(
+            "kiro_crew.dashboard.chat_handlers.default_project_dir",
+            lambda ws: "/workspace/derived",
+        )
+        monkeypatch.setattr(
+            "kiro_crew.dashboard.chat_handlers.cached_project_agent_names",
+            lambda p: frozenset(),
+        )
+        slot = _ChatSlot("test")
+        slot.agent = "old-agent"
+        slot.project = "/workspace/old-ws"
+        state = _mock_state(slot, provider=None)
+        state.conversation_log = MagicMock()
+
+        async def _reset_concurrent_project_write_and_rebind(*_a, **_k):
+            # The concurrent same-value write (a plain str, new identity),
+            # then the rebind that forces this request onto its rollback.
+            slot.project = "/workspace/derived"
+            slot.linked_session_key = "cron:job-1"
+            return True
+
+        state.sessions.reset = AsyncMock(side_effect=_reset_concurrent_project_write_and_rebind)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat/slots/test/agent", json={"agent": "new-agent"})
+            data = await resp.json()
+            assert resp.status == 409
+            assert data["code"] == "session_rebound"
+            # The concurrent writer's project survives (a value CAS would
+            # have restored /workspace/old-ws); our own agent commit unwinds.
+            assert slot.project == "/workspace/derived"
+            assert slot.agent == "old-agent"
+
+    @pytest.mark.asyncio
+    async def test_rebind_during_project_save_rolls_back_and_answers_409(
+        self, tmp_path, monkeypatch
+    ):
+        # A binding that lands while the recent-project save awaits means the
+        # deferred-reset flag would name a session the slot no longer runs on
+        # (and the flag's consumer would tear down a session nobody is on
+        # while the actual session keeps the old CWD): the commit is rolled
+        # back, the flag stays unarmed, and the caller retries against the
+        # current binding.
+        import os
+
+        slot = _ChatSlot("test")
+        slot.project = "/workspace/old-ws"
+        state = _mock_state(slot)
+
+        def _save_and_rebind(_project):
+            slot.linked_session_key = "cron:job-1"
+
+        monkeypatch.setattr(
+            "kiro_crew.dashboard.chat_handlers._save_recent_project", _save_and_rebind
+        )
+        new_dir = os.path.realpath(str(tmp_path))
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat/slots/test/project", json={"project": new_dir})
+            data = await resp.json()
+            assert resp.status == 409
+            assert data["code"] == "session_rebound"
+            assert slot.project == "/workspace/old-ws"
+            assert not slot._pending_reset_history_key
+
+    @pytest.mark.asyncio
+    async def test_app_caller_project_denied_before_path_probing(self):
+        # The isdir/sensitive-path probes answer differently for existing vs
+        # missing paths: an app caller that owns a linked slot must get the
+        # indistinguishable 404 BEFORE any filesystem check, or the endpoint
+        # is a filesystem existence oracle for unauthorized callers (a
+        # missing path would leak as the probe's 400 instead).
+        slot = _ChatSlot("test")
+        slot.project = "/workspace/old-ws"
+        slot._app = "demo-app"
+        slot.linked_session_key = "slack:123.456"
+        state = _mock_state(slot)
+        async with TestClient(TestServer(_make_app_as(state, "demo-app"))) as client:
+            resp = await client.post(
+                "/api/chat/slots/test/project",
+                json={"project": "/definitely/not/a/real/dir-8415"},
+            )
+            assert resp.status == 404
+            assert slot.project == "/workspace/old-ws"
+
+    @pytest.mark.asyncio
+    async def test_rebind_during_live_effort_push_commits_with_warning(self):
+        # change_effort persisted the per-model override before the rebind
+        # was observable, so a 409 would claim a rollback that did not
+        # happen: the slot value is committed (it is what the new binding's
+        # next cold start reads) and the rebind is reported as a warning.
+        from kiro_crew.providers.acp import AcpProvider
+
+        slot = _ChatSlot("test")
+        state = _mock_state(slot, provider=None)
+        provider = MagicMock(spec=AcpProvider)
+        provider.supports_effort.return_value = True
+        provider.has_active_turn.return_value = False
+
+        async def _push_and_rebind(_effort):
+            slot.linked_session_key = "cron:job-1"
+            return True
+
+        provider.change_effort = AsyncMock(side_effect=_push_and_rebind)
+        state.sessions.get_provider = MagicMock(return_value=provider)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post(
+                "/api/chat/slots/test/reasoning-effort", json={"reasoning_effort": "high"}
+            )
+            data = await resp.json()
+            assert resp.status == 200
+            assert data["ok"] is True
+            assert "rebound" in data["warning"]
+            assert slot.reasoning_effort == "high"
+            state.sessions.reset.assert_not_awaited()
 
 
 class TestSlotProjectSwitchAtomicity:

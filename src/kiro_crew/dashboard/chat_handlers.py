@@ -5425,6 +5425,26 @@ async def _apply_remote_pick_locked(
     return web.json_response({"ok": True, control: value, "remote": True})
 
 
+class _CommitToken(str):
+    """A ``str`` whose per-request IDENTITY marks commit ownership.
+
+    ``api_chat_slot_agent`` commits ``slot.agent`` (and the derived
+    ``slot.workspace`` / ``slot.project``) before its awaits and may have to
+    roll those commits back (session rebound, busy decline). Every one of
+    those fields has unlocked writers (openai_compat, members, the in-turn
+    /agent and set_project directives), so the rollback must not fire when
+    one of them wrote during the awaits — including a write of the SAME text,
+    which a value compare-and-set cannot distinguish from this handler's own
+    commit (the in-turn set_project directive can legitimately write the very
+    project this handler derived). A subclass instance compares, hashes,
+    serializes and persists exactly like the plain string, but is a distinct
+    object per commit: ``slot.<field> is <token>`` is therefore a sound
+    "still my write" test with no cooperation needed from the other writers.
+    """
+
+    __slots__ = ()
+
+
 async def api_chat_slot_agent(request: web.Request) -> web.Response:
     """POST /api/chat/slots/{slot}/agent — set agent for a chat slot."""
     state: DashboardState = request.app["state"]
@@ -5469,6 +5489,42 @@ async def api_chat_slot_agent(request: web.Request) -> web.Response:
     # race against concurrent writers (e.g. the project endpoint, which does
     # not take this lock).
     async with slot._lock:
+        # The session the switch resets — ``effective_session_key``, never
+        # ``_history_key_for`` (see api_chat_slot_model): a channel- or
+        # cron-born slot runs its turns under its linked key, and the
+        # dashboard-prefixed spelling names a session that never existed —
+        # the reset would "succeed" against nothing while the live process
+        # kept the old agent. Resolved INSIDE the lock: the binding can land
+        # while this request waits on it.
+        session_key = effective_session_key(slot)
+        # App isolation on the SESSION, not just the slot (the cancel routes'
+        # policy): slot ownership does not imply ownership of a linked
+        # channel session, so an app caller may not switch the agent a
+        # channel thread runs on. Denied as an indistinguishable 404.
+        denied = _app_cancel_denied(request, slot, "chat.slot_agent", session_key)
+        if denied is not None:
+            return denied
+        # Never reset under an in-flight turn (the model handler's policy,
+        # and the _cancel_target subtlety): a RUNNING turn owns a captured
+        # identity because ``linked_session_key`` is mutable, so the key
+        # resolved above may not be the turn's — tearing it down would kill
+        # the wrong session (or the streaming turn itself). slot.running is
+        # checked first because it is set at dispatch, BEFORE provider.start()
+        # registers a session, so a cold-starting first turn is invisible to
+        # get_provider but not to slot.running. A 409 is retryable once the
+        # turn completes. Checked BEFORE the commit below, so nothing needs
+        # rolling back.
+        busy_provider = state.sessions.get_provider(session_key)
+        if slot.running or (
+            isinstance(busy_provider, LLMProvider) and busy_provider.has_active_turn()
+        ):
+            return web.json_response(
+                {"error": "a turn is in flight", "code": "turn_in_flight"}, status=409
+            )
+        # Rollback baseline for the session_rebound path below. The commit is
+        # otherwise deliberately not rolled back on a failing reset (see the
+        # teardown_incomplete comment), so this is the ONE case that unwinds.
+        prior_agent = slot.agent
         # Stored verbatim — never rewritten to whatever currently answers. See
         # the same reasoning in api_chat_slot_create.
         new_workspace = slot.workspace
@@ -5494,7 +5550,19 @@ async def api_chat_slot_agent(request: web.Request) -> web.Response:
         # binding, and a replacement session created by a concurrent send
         # mid-reset already runs it. Restoring the old label would advertise
         # a binding nothing runs (and tear against that replacement).
-        slot.agent = agent_name
+        slot.agent = _CommitToken(agent_name)
+        # Ownership token for the rollback paths below: the committed value is
+        # a str SUBCLASS instance whose identity only this request holds — it
+        # compares, hashes, serializes and persists exactly like the plain
+        # string, but `slot.agent is <token>` proves no other writer has
+        # touched the field since this commit. Any concurrent write — the
+        # unlocked openai_compat / members / in-turn directive writers
+        # included, and a SAME-VALUE write especially — replaces the object,
+        # so the rollback stands down. A value compare-and-set cannot tell
+        # "still my write" from "their equal write", and rolling back over a
+        # concurrent same-agent dispatch would restore the old agent under a
+        # turn already running the new one.
+        committed_agent = slot.agent
 
         # Resolve workspace from agent bindings. The response value is seeded
         # from the slot's CURRENT workspace, not a "default" literal: if
@@ -5544,20 +5612,75 @@ async def api_chat_slot_agent(request: web.Request) -> web.Response:
         # cold-starts the replacement session from the slot's CURRENT
         # bindings, so the full new binding TRIPLE must already be visible or
         # the new agent's session starts in the OLD project and its tools run
-        # in the wrong repository. The CAS still protects a concurrent
-        # explicit pick that landed during the resolution awaits above.
+        # in the wrong repository. The write-side CAS still protects a
+        # concurrent explicit pick that landed during the resolution awaits
+        # above; the committed values are identity tokens so the ROLLBACK can
+        # prove ownership — a value compare there would erase a concurrent
+        # same-value write (the in-turn set_project directive can write the
+        # very project this handler derived).
+        committed_workspace: str | None = None
+        committed_project: str | None = None
         if slot.workspace == pre_await_workspace:
-            slot.workspace = new_workspace
+            slot.workspace = _CommitToken(new_workspace)
+            committed_workspace = slot.workspace
         if slot.project == pre_await_project:
-            slot.project = new_project
+            slot.project = _CommitToken(new_project)
+            committed_project = slot.project
 
         # Reset session so the next message uses the new agent.
         logger.info(
             "Slot %s agent switched to %r, resetting session", name, agent_name or "kirocrew"
         )
+
+        def _rollback_switch() -> None:
+            """Unwind this request's commit — only the values still OURS.
+
+            EVERY field is unwound on IDENTITY of its commit token, never
+            value equality: unlocked writers (the in-turn /agent and
+            set_project directives in chat_runner, members, openai_compat)
+            can write the SAME text during this handler's awaits — the
+            in-turn set_project directive can legitimately write the very
+            project this handler derived — and a value compare-and-set would
+            erase that successful concurrent write. Any write replaces the
+            token object, so an identity match proves the field is still
+            this commit's; a field this request never committed (the
+            write-side CAS lost) has a None token and is never touched.
+            """
+            if slot.agent is committed_agent:
+                slot.agent = prior_agent
+            if committed_workspace is not None and slot.workspace is committed_workspace:
+                slot.workspace = pre_await_workspace
+            if committed_project is not None and slot.project is committed_project:
+                slot.project = pre_await_project
+
+        # Last-instant re-probe in a NO-AWAIT window before the teardown (the
+        # model template's rule at its own reset site): the pre-commit check
+        # above is separated from this point by the resolution warm-up await,
+        # so a turn — a channel message on the linked session in particular —
+        # may have started since it ran. Message dispatch does not take
+        # slot._lock, so this fast path plus the atomic skip_if_busy decline
+        # below are what keep the teardown off a streaming turn.
+        recheck = state.sessions.get_provider(session_key)
+        if slot.running or (isinstance(recheck, LLMProvider) and recheck.has_active_turn()):
+            _rollback_switch()
+            return web.json_response(
+                {"error": "a turn is in flight", "code": "turn_in_flight"}, status=409
+            )
+        # Children guard, shared with reload/model: the reset tears down the
+        # runtime attached sub-agents run on, so a parent that is idle but
+        # still has children must refuse rather than discard their work.
+        children_409 = _subagents_attached_response(state, slot, session_key, "slot_agent")
+        if children_409 is not None:
+            _rollback_switch()
+            return children_409
         teardown_incomplete = False
+        reset_ok = True
         try:
-            await _reset_slot_session(state, slot, _history_key_for(name))
+            # skip_if_busy: SessionManager.reset evaluates busyness atomically
+            # with the session pop, so a turn that slipped into the microsecond
+            # residue after the re-check above is declined instead of torn
+            # down mid-stream.
+            reset_ok = await _reset_slot_session(state, slot, session_key, skip_if_busy=True)
         except Exception:
             # The switch is COMMITTED regardless: the reset pops the session
             # before its shutdown can fail, so the new binding is what every
@@ -5568,11 +5691,71 @@ async def api_chat_slot_agent(request: web.Request) -> web.Response:
             # for a switch that actually happened.
             teardown_incomplete = True
             logger.exception("Slot %s agent switch: old session teardown incomplete", name)
+        if not reset_ok and not teardown_incomplete:
+            # Disambiguate the decline FAIL-CLOSED, the workspace handler's
+            # template: a live provider mid-turn → roll back and 409; a live
+            # IDLE session that declined (its turn ended before this re-read)
+            # is always safe to tear down, so retry once; a second decline
+            # means another turn is genuinely racing. No live provider means
+            # there was nothing to tear down — the next message cold-starts
+            # under the new binding, which is what the reset would arrange.
+            busy_provider = state.sessions.get_provider(session_key)
+            if isinstance(busy_provider, LLMProvider):
+                if busy_provider.has_active_turn():
+                    _rollback_switch()
+                    return web.json_response(
+                        {"error": "a turn is in flight", "code": "turn_in_flight"}, status=409
+                    )
+                try:
+                    reset_ok = await _reset_slot_session(
+                        state, slot, session_key, skip_if_busy=True
+                    )
+                except Exception:
+                    # Same as the first attempt: a post-pop teardown raise is a
+                    # COMMITTED switch with a degraded teardown, not a failure.
+                    # Left unwrapped this raise escapes the handler under
+                    # slot._lock as a 500 while slot.agent stays committed and
+                    # un-rolled-back, so the acting tab's performSlotSwitch keeps
+                    # the OLD store value for a switch that happened — the exact
+                    # divergence the first-attempt guard prevents. Fall through
+                    # to the committed 200 + warning path instead.
+                    teardown_incomplete = True
+                    logger.exception("Slot %s agent switch: old session teardown incomplete", name)
+                if (
+                    not reset_ok
+                    and not teardown_incomplete
+                    and state.sessions.get_provider(session_key) is not None
+                ):
+                    _rollback_switch()
+                    return web.json_response(
+                        {"error": "a turn is in flight", "code": "turn_in_flight"}, status=409
+                    )
+
+        if effective_session_key(slot) != session_key:
+            # The slot was bound to a different session while the resolution
+            # warm-up or the reset awaited (a cron/workflow slot gets linked
+            # when its first result is injected): the session this request
+            # tore down is no longer the slot's, so the committed binding
+            # would describe a session that never saw the switch. The
+            # teardown itself was harmless (that session was idle and no
+            # longer bound); roll back the commit and answer the same 409 the
+            # model and workspace handlers use. Checked BEFORE the metadata
+            # write below so a rolled-back agent is never persisted for
+            # restart.
+            _rollback_switch()
+            return web.json_response(
+                {"error": "slot session was rebound during the switch", "code": "session_rebound"},
+                status=409,
+            )
 
         # Persist the new agent so the session resumes under the correct
         # agent after a gateway restart. INSIDE the lock: two racing switches
         # otherwise interleave their metadata writes, and a stalled earlier
         # write finishing last would restore the older agent on restart.
+        # Deliberately ``_history_key_for``, NOT ``session_key``: this names
+        # the slot's TRANSCRIPT (the .jsonl the restart scan reads), not the
+        # live session the reset above addressed — the same history-vs-session
+        # split ``_cancel_target`` documents.
         if state.conversation_log:
             try:
                 # update_metadata enters _locked (flock + os.close); those are
@@ -5586,6 +5769,35 @@ async def api_chat_slot_agent(request: web.Request) -> web.Response:
                 )
             except Exception:
                 logger.warning("Failed to persist agent for slot %s", name, exc_info=True)
+
+        if effective_session_key(slot) != session_key:
+            # A binding can land during the metadata await too — the rebound
+            # guard above ran BEFORE that await, so it must be re-validated
+            # after the last await inside the lock or a workflow binding
+            # landing there gets a 200 while the linked session keeps the old
+            # agent. Roll back the commit AND the metadata just persisted:
+            # the 409 tells the caller nothing changed, so the transcript
+            # metadata must agree. Restoring ``slot.agent`` (post-rollback)
+            # rather than ``prior_agent`` is deliberate — if a concurrent
+            # writer took ownership during the awaits, its value is the
+            # truthful current one. The metadata is transcript-scoped and
+            # binding-independent, so its restore needs no further re-check.
+            _rollback_switch()
+            if state.conversation_log:
+                try:
+                    await asyncio.to_thread(
+                        state.conversation_log.update_metadata,
+                        _history_key_for(name),
+                        {"agent": str(slot.agent)},
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to restore agent metadata for slot %s", name, exc_info=True
+                    )
+            return web.json_response(
+                {"error": "slot session was rebound during the switch", "code": "session_rebound"},
+                status=409,
+            )
 
         # Snapshot the response's workspace LAST, immediately before leaving
         # the lock: the metadata await above yields the event loop, so a
@@ -6666,11 +6878,25 @@ async def api_chat_slot_reasoning_effort(request: web.Request) -> web.Response:
     # effect (live update, deferral, or reset) — a failed request provably
     # changed nothing.
     async with slot._lock:
+        # The session the switch will probe and, on the fallback path, reset —
+        # ``effective_session_key``, never ``_history_key_for`` (see
+        # api_chat_slot_model): a channel- or cron-born slot runs its turns
+        # under its linked key, and the dashboard-prefixed spelling names a
+        # session that never existed — the live-effort probe would see
+        # nothing and the reset would "succeed" against nothing while the
+        # live process kept the old effort. Resolved INSIDE the lock: the
+        # binding can land while this request waits on it.
+        session_key = effective_session_key(slot)
+        # App isolation on the SESSION, not just the slot (the cancel routes'
+        # policy), BEFORE the same-value fast path so the denial is
+        # indistinguishable from a missing slot for every request shape.
+        denied = _app_cancel_denied(request, slot, "chat.slot_reasoning_effort", session_key)
+        if denied is not None:
+            return denied
         if slot.reasoning_effort == effort:
             return web.json_response({"ok": True, "reasoning_effort": effort})
         logger.info("Slot %s reasoning_effort switched to %r", name, effort or "default")
 
-        session_key = _history_key_for(name)
         provider = state.sessions.get_provider(session_key)
         _updated_live = False
         if isinstance(provider, AcpProvider) and provider.supports_effort():
@@ -6709,7 +6935,62 @@ async def api_chat_slot_reasoning_effort(request: web.Request) -> web.Response:
             _updated_live = True
             logger.info("Slot %s effort persisted (model not effort-capable)", name)
 
+        if effective_session_key(slot) != session_key and _updated_live:
+            # The slot was bound to a different session while change_effort /
+            # clear_effort awaited its provider RPC. The push landed on the
+            # session the slot WAS bound to, and change_effort already
+            # persisted the per-model override + overlay — that cannot be
+            # unwound, so a 409 here would claim a rollback that did not
+            # happen and leave the slot value contradicting the persisted
+            # override. Commit the slot value (it is what the new binding's
+            # next cold start reads) and report the rebind as a warning.
+            slot.reasoning_effort = effort
+            state.push_slots_update()
+            return web.json_response(
+                {
+                    "ok": True,
+                    "reasoning_effort": effort,
+                    "warning": "slot session was rebound during the switch; "
+                    "the new binding applies on its next cold start",
+                }
+            )
+
         if not _updated_live:
+            if effective_session_key(slot) != session_key:
+                # Rebound while a FAILED live push awaited: the reset fallback
+                # below would tear down the wrong session, and nothing is
+                # committed yet on this path, so there is genuinely nothing
+                # to roll back — answer the same 409 the model/workspace
+                # handlers use so the retry resolves the current binding.
+                return web.json_response(
+                    {
+                        "error": "slot session was rebound during the switch",
+                        "code": "session_rebound",
+                    },
+                    status=409,
+                )
+            # Never tear down an in-flight turn (the model handler's policy,
+            # and the _cancel_target subtlety: a RUNNING turn owns a captured
+            # identity, so the key resolved above may not be the turn's).
+            # Re-probed here because the change_effort awaits above yielded
+            # the event loop; slot.running is checked first because a
+            # cold-starting first turn is invisible to get_provider. The
+            # effort-capable live provider's active turn never reaches this —
+            # the defer branch above already returned for it. A 409 is
+            # retryable once the turn completes; nothing is committed yet.
+            recheck = state.sessions.get_provider(session_key)
+            if slot.running or (isinstance(recheck, LLMProvider) and recheck.has_active_turn()):
+                return web.json_response(
+                    {"error": "a turn is in flight", "code": "turn_in_flight"}, status=409
+                )
+            # Children guard, shared with reload/model: the reset tears down
+            # the runtime attached sub-agents run on. Nothing is committed
+            # yet, so a refusal here changes nothing.
+            children_409 = _subagents_attached_response(
+                state, slot, session_key, "slot_reasoning_effort"
+            )
+            if children_409 is not None:
+                return children_409
             # No live session (or live update failed): reset so the next cold
             # start picks up the new effort via the provider factory/overlay.
             # The effort is committed BEFORE the reset: a message send landing
@@ -6720,13 +7001,80 @@ async def api_chat_slot_reasoning_effort(request: web.Request) -> web.Response:
             # value) and is reported as a success with a warning — a 500
             # would make the acting tab keep the OLD store value for a
             # switch that actually happened.
+            prior_effort = slot.reasoning_effort
             slot.reasoning_effort = effort
+            teardown_incomplete = False
+            reset_ok = True
             try:
-                await _reset_slot_session(state, slot, session_key)
+                # skip_if_busy: the re-check above is a best-effort fast path
+                # — SessionManager.reset evaluates busyness atomically with
+                # the session pop, so a turn that slipped into the residue
+                # (or holds the semaphore before its prompt is in flight,
+                # which has_active_turn cannot see) is declined here instead
+                # of torn down mid-stream.
+                reset_ok = await _reset_slot_session(state, slot, session_key, skip_if_busy=True)
             except Exception:
                 logger.exception(
                     "Slot %s reasoning_effort switch: old session teardown incomplete", name
                 )
+                teardown_incomplete = True
+            if not reset_ok and not teardown_incomplete:
+                # Disambiguate the decline FAIL-CLOSED (the workspace
+                # handler's template): live provider mid-turn → roll back and
+                # 409; live IDLE provider → retry once; no live provider →
+                # nothing to tear down, the next message cold-starts under
+                # the new effort.
+                busy_provider = state.sessions.get_provider(session_key)
+                if isinstance(busy_provider, LLMProvider):
+                    if busy_provider.has_active_turn():
+                        slot.reasoning_effort = prior_effort
+                        return web.json_response(
+                            {"error": "a turn is in flight", "code": "turn_in_flight"},
+                            status=409,
+                        )
+                    try:
+                        reset_ok = await _reset_slot_session(
+                            state, slot, session_key, skip_if_busy=True
+                        )
+                    except Exception:
+                        # A post-pop teardown raise on the retry is a COMMITTED
+                        # switch with a degraded teardown, not a failure; left
+                        # unwrapped it escapes under slot._lock as a 500 while
+                        # slot.reasoning_effort stays committed, so the acting
+                        # tab keeps the OLD store value. Fall through to the
+                        # committed 200 + warning path (the first attempt's
+                        # guard).
+                        teardown_incomplete = True
+                        logger.exception(
+                            "Slot %s reasoning_effort switch: old session teardown incomplete",
+                            name,
+                        )
+                    if (
+                        not reset_ok
+                        and not teardown_incomplete
+                        and state.sessions.get_provider(session_key) is not None
+                    ):
+                        slot.reasoning_effort = prior_effort
+                        return web.json_response(
+                            {"error": "a turn is in flight", "code": "turn_in_flight"},
+                            status=409,
+                        )
+            if effective_session_key(slot) != session_key:
+                # Same check after the reset await as after the live push:
+                # the session torn down is no longer the slot's, so the
+                # commit would advertise an effort a session that never saw
+                # the switch does not run. The teardown itself was harmless
+                # (that session was idle and no longer bound); roll back and
+                # let the retry resolve the current binding.
+                slot.reasoning_effort = prior_effort
+                return web.json_response(
+                    {
+                        "error": "slot session was rebound during the switch",
+                        "code": "session_rebound",
+                    },
+                    status=409,
+                )
+            if teardown_incomplete:
                 state.push_slots_update()
                 return web.json_response(
                     {
@@ -7017,6 +7365,16 @@ async def api_chat_slot_project(request: web.Request) -> web.Response:
     if not isinstance(project, str):
         return web.json_response({"error": "project must be a string"}, status=400)
     project = project.strip()
+    # Session-level app isolation BEFORE any filesystem probing: the
+    # isdir / sensitive-path / voice-runtime checks below answer differently
+    # for existing vs missing paths, so running them ahead of the denial
+    # would hand an app caller that owns a linked slot an unauthorized
+    # filesystem existence oracle. Best-effort read outside the lock — the
+    # locked re-check below stays authoritative for a binding that moves
+    # while this request waits on the lock.
+    denied = _app_cancel_denied(request, slot, "chat.slot_project", effective_session_key(slot))
+    if denied is not None:
+        return denied
     if project:
         project = os.path.realpath(os.path.expanduser(project))
         if not os.path.isdir(project):
@@ -7060,8 +7418,33 @@ async def api_chat_slot_project(request: web.Request) -> web.Response:
     # reset is awaited while holding the lock beyond what the other switch
     # handlers already hold.
     async with slot._lock:
+        # The session the deferred reset will address — ``effective_session_key``,
+        # never ``_history_key_for`` (see api_chat_slot_model): a channel- or
+        # cron-born slot runs its turns under its linked key, and the
+        # dashboard-prefixed spelling names a session that never existed, so
+        # the deferred reset would "succeed" against nothing while the live
+        # process kept the old CWD. Resolved INSIDE the lock (a binding can
+        # land while this request waits on it), and the flag below carries
+        # THIS key — the one the app gate authorized — so authorization and
+        # action cannot disagree. session_directive_apply's set_project path
+        # already resolves the flag the same way.
+        session_key = effective_session_key(slot)
+        # App isolation on the SESSION, not just the slot (the cancel routes'
+        # policy): slot ownership does not imply ownership of a linked
+        # channel session, so an app caller may not repoint the project a
+        # channel thread runs under. Denied as an indistinguishable 404.
+        denied = _app_cancel_denied(request, slot, "chat.slot_project", session_key)
+        if denied is not None:
+            return denied
         old_project = slot.project
-        slot.project = project
+        # _CommitToken (identity-gated rollback), the agent handler's pattern:
+        # slot.project has unlocked writers (the in-turn set_project directive
+        # writes this field without the lock, and may legitimately write the
+        # very project this handler sets). A value compare-and-set rollback
+        # cannot tell such a same-text write from this handler's own commit and
+        # would erase it; a per-request identity token can.
+        committed_project = _CommitToken(project)
+        slot.project = committed_project
         logger.info("Slot %s project set to %r", name, project)
         sel().log_api_access(
             caller=request.get("user", "dashboard"),
@@ -7083,7 +7466,29 @@ async def api_chat_slot_project(request: web.Request) -> web.Response:
         # from inside the kiro-cli process group (the set_project MCP tool); an
         # inline reset would killpg() the caller. Consumed in chat_runner.
         if project != old_project:
-            slot._pending_reset_history_key = _history_key_for(name)
+            if effective_session_key(slot) != session_key:
+                # The slot was bound to a different session while the
+                # recent-project save awaited: arming the flag with the key
+                # this request resolved would have the consumer tear down a
+                # session nobody is on while the slot's ACTUAL session keeps
+                # the old CWD — the exact stale-binding class this handler
+                # was converted to remove. Re-resolving here instead is not
+                # an option either: it would arm a key the app gate above
+                # never authorized. Roll back the commit (identity-gated on
+                # the _CommitToken — the in-turn set_project directive writes
+                # this field without the lock, and a same-value write must not
+                # be mistaken for this handler's own commit) and answer the
+                # same 409 the sibling switch handlers use.
+                if slot.project is committed_project:
+                    slot.project = old_project
+                return web.json_response(
+                    {
+                        "error": "slot session was rebound during the switch",
+                        "code": "session_rebound",
+                    },
+                    status=409,
+                )
+            slot._pending_reset_history_key = session_key
             # Speculatively re-create the session rooted at the new project so the
             # cwd change is paid during think-time. The eager task consumes the
             # deferred reset itself, but only when no turn is running — the
