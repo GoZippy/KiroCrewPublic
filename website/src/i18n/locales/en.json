@@ -7935,7 +7935,6 @@
         "disconnect": "Disconnect",
         "dismiss": "Dismiss",
         "dismiss_diagnosis": "Dismiss diagnosis",
-        "dismiss_error": "Dismiss error",
         "distinct": "distinct",
         "ec2_instance_id_i_or_ssm_managed_instance_id_mi": "EC2 instance id (i-…) or SSM managed-instance id (mi-…).",
         "enable_it_to_let_this_gateway_open_ssh_tunnels_t": "Enable it to let this gateway open tunnels (SSH or AWS SSM) to your remote instances and switch\n          between them from the top tab bar.",

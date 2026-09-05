@@ -10777,7 +10777,8 @@
         "strength_measured": "misurato, nessuna divergenza",
         "strength_no_objection": "nessuna obiezione riscontrata",
         "strength_refuted": "non sicuro se condiviso",
-        "strength_unknown": "non misurato"
+        "strength_unknown": "non misurato",
+        "measure_progress_failed": "Impossibile leggere l’avanzamento della misurazione."
       },
       "cancel": "Annulla",
       "col_server": "Server",
@@ -10835,7 +10836,8 @@
       "views_aria": "Viste di gestione MCP",
       "state_direct_env": "diretto (env)",
       "state_direct_env_reason": "Nessuno stub, ma la tua selezione resta salvata.",
-      "state_direct_env_legend": "diretto (env) — il server dichiara una chiave di ambiente che un backend condiviso tratterrebbe, quindi {{productName}} non crea alcuno stub: la sessione lo avvia da sé, senza backend condiviso e senza interfaccia propria del server."
+      "state_direct_env_legend": "diretto (env) — il server dichiara una chiave di ambiente che un backend condiviso tratterrebbe, quindi {{productName}} non crea alcuno stub: la sessione lo avvia da sé, senza backend condiviso e senza interfaccia propria del server.",
+      "status_failed": "Impossibile caricare lo stato di condivisione. Gli interruttori qui sotto mostrano i valori predefiniti, non quelli salvati."
     },
     "migrationPage": {
       "app_migration": "Migrazione dell'app",
@@ -12179,7 +12181,12 @@
         "channel_explainer_gateway_switch_note_version": "Cambiare canale modifica solo quale canale viene controllato per gli aggiornamenti. Il canale {{channel}} pubblica attualmente la v{{version}}, PIÙ VECCHIA della build in esecuzione: esegui il comando qui sotto per spostare davvero questa installazione.",
         "channel_publishes_older_version": "Il canale {{channel}} pubblica attualmente la v{{version}}, più vecchia della build in esecuzione, quindi non ha aggiornamenti da offrire. <link>Scarica la v{{version}}</link> per passare a quel canale.",
         "switch_to_version": "Passa alla v{{version}}",
-        "in_app_channel_move_intro": "La release del canale scelto viene installata accanto a quella attuale e il passaggio è atomico. Per applicarla serve un comando di approvazione sull'host del gateway."
+        "in_app_channel_move_intro": "La release del canale scelto viene installata accanto a quella attuale e il passaggio è atomico. Per applicarla serve un comando di approvazione sull'host del gateway.",
+        "arm_status_poll_failing": "Impossibile aggiornare lo stato di approvazione dal gateway. Il conto alla rovescia continua in locale.",
+        "auto_download_save_failed": "Impossibile salvare l’impostazione di download automatico.",
+        "auto_update_setting_unavailable": "Impossibile caricare l’impostazione di aggiornamento automatico. L’interruttore mostra il valore predefinito finché non viene caricata.",
+        "copy_failed_select_the_command_and_copy_it_manually": "Copia non riuscita. Seleziona il comando e copialo manualmente.",
+        "update_info_unavailable": "Impossibile leggere la versione e il canale di aggiornamento di questa build dall’app."
       },
       "botChannelPanel": {
         "allowed_user_ids": "ID utente consentiti",
@@ -12261,7 +12268,13 @@
         "node_how": "Installalo, poi riapri questa pagina. <dl>Scarica Node.js</dl>",
         "node_no_admin": "Su una macchina dove non è possibile installare Node — nessun diritto di amministratore, o un registry che richiede l'accesso — esegui il comando qui sotto sulla macchina dove è in esecuzione {{productName}}. Lo script installa Node e la CLI nella tua directory home e ti spiega come risolvere se la rete blocca il download.",
         "copy_command": "Copia comando",
-        "copied": "Copiato"
+        "copied": "Copiato",
+        "builtin_save_failed": "Impossibile salvare l’impostazione del browser integrato.",
+        "builtin_status_unavailable": "Impossibile caricare l’impostazione del browser integrato.",
+        "copy_failed": "Copia non riuscita. Seleziona il comando e copialo manualmente.",
+        "engine_download_failed": "Impossibile avviare il download del browser.",
+        "install_request_failed": "Impossibile avviare l’installazione.",
+        "token_save_failed": "Impossibile salvare il token dell’estensione."
       },
       "channelDisabledPanel": {
         "checking_your_organization_s_channel_policy": "Verifica della policy dei canali della tua organizzazione…",
@@ -12460,7 +12473,8 @@
         "widget_density": "Densità dei widget",
         "your_role": "Il tuo ruolo",
         "session_card_source_links": "Chip di PR e issue sulle schede di sessione",
-        "session_card_source_links_desc": "Mostra sulla scheda di ogni sessione nella barra laterale un chip per ogni pull request, merge request e issue citata in quella sessione. Se disattivato, si fermano anche le chiamate periodiche al provider che tengono aggiornati quei chip."
+        "session_card_source_links_desc": "Mostra sulla scheda di ogni sessione nella barra laterale un chip per ogni pull request, merge request e issue citata in quella sessione. Se disattivato, si fermano anche le chiamate periodiche al provider che tengono aggiornati quei chip.",
+        "failed_to_load_tips_preference": "Impossibile caricare la preferenza dei suggerimenti."
       },
       "computerUsePanel": {
         "accessibility": "Accessibilità",
@@ -12596,7 +12610,9 @@
         "view": "Vista",
         "zoom_font": "Zoom e carattere",
         "zoom_level": "Livello di zoom",
-        "font_family_option_opendyslexic": "OpenDyslexic"
+        "font_family_option_opendyslexic": "OpenDyslexic",
+        "config_load_failed": "Impossibile caricare le impostazioni di visualizzazione salvate. I campi della shell e delle sessioni recenti non sono disponibili finché non vengono caricate.",
+        "recent_tint_save_failed": "Impossibile salvare il numero di sessioni recenti evidenziate."
       },
       "importPanel": {
         "agent_data": "Dati dell'agente",
@@ -12670,7 +12686,6 @@
         "disconnect_failed": "Disconnessione di {{id}} non riuscita: {{error}}",
         "dismiss": "Ignora",
         "dismiss_diagnosis": "Ignora la diagnosi",
-        "dismiss_error": "Ignora l'errore",
         "distinct": "distinti",
         "ec2_instance_id_i_or_ssm_managed_instance_id_mi": "Id istanza EC2 (i-…) o id istanza gestita SSM (mi-…).",
         "enable_it_to_let_this_gateway_open_ssh_tunnels_t": "Attivala per consentire a questo gateway di aprire tunnel (SSH o AWS SSM) verso le tue istanze remote e\n          passare da una all’altra dalla barra delle schede in alto.",
@@ -12767,7 +12782,8 @@
         "test_sound": "Prova il suono",
         "use_default": "Usa il predefinito",
         "volume": "Volume",
-        "preset_pulse": "Pulsazione"
+        "preset_pulse": "Pulsazione",
+        "failed_to_save_channel_setting": "Impossibile salvare l’impostazione del canale. Il valore precedente è stato ripristinato."
       },
       "privacyPanel": {
         "recordMetricsLabel": "Registra le metriche",
@@ -12787,7 +12803,8 @@
         "more": "altri",
         "no_matches_for_query": "Nessuna corrispondenza per \"{{query}}\".",
         "show": "Mostra",
-        "unavailable": "non disponibile"
+        "unavailable": "non disponibile",
+        "live_count_unavailable": "Il conteggio in tempo reale di questo controllo non è al momento disponibile."
       },
       "releases": {
         "badge_unreleased": "Non rilasciata",

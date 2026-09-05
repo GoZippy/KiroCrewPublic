@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { SettingsSection, SettingsCard, SettingsToggle, SettingsSelect, SettingsInput, SettingsButtonGroup } from '../../components/settings'
+import { Btn } from '../../components/ui'
 import { loadChatConfig, saveChatConfig, type ChatConfig, type ContentWidth, type DashboardConfig, type SendMode } from '../chat/ChatSettings'
 import { api } from '../../api/client'
 import { useOptimisticConfigPaths, setConfigPathValue } from './useOptimisticConfigPaths'
@@ -488,17 +489,31 @@ export function ChatPanel() {
 
   return (
     <>
+      {/* No hand-off: `localRoleOther`, `localBudget` and `localKeepChars` are
+          this panel's live drafts. A hand-off click blurs the field, which STARTS
+          a save — and if that save fails after the navigation has unmounted the
+          panel, the typed value is gone with nothing left on screen to say so. */}
       <ErrorNotice message={saveError} onDismiss={() => setSaveError('')} className="mb-4 animate-rise" />
       {dashQ.isError && (
-        <div className="mb-4 text-[13px] text-danger">
-          {i18nT('pages.settings.chatPanel.failed_to_load_dashboard_config')}{' '}
-          <button className="underline cursor-pointer bg-transparent border-none text-danger" onClick={() => dashQ.refetch()}>{i18nT('pages.settings.chatPanel.retry')}</button>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          {/* No hand-off: the rest of the panel — and its `localRoleOther` /
+              `localBudget` / `localKeepChars` drafts — stays mounted under this
+              banner, so the navigation would discard them. Retry is the path. */}
+          <ErrorNotice
+            className="flex-1 min-w-[16rem]"
+            message={i18nT('pages.settings.chatPanel.failed_to_load_dashboard_config')}
+          />
+          <Btn onClick={() => dashQ.refetch()}>{i18nT('pages.settings.chatPanel.retry')}</Btn>
         </div>
       )}
       {mcQ.isError && (
-        <div className="mb-4 text-[13px] text-danger">
-          {i18nT('pages.settings.chatPanel.failed_to_load_config')}{' '}
-          <button className="underline cursor-pointer bg-transparent border-none text-danger" onClick={() => mcQ.refetch()}>{i18nT('pages.settings.chatPanel.retry')}</button>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          {/* No hand-off: same drafts as above share this panel. */}
+          <ErrorNotice
+            className="flex-1 min-w-[16rem]"
+            message={i18nT('pages.settings.chatPanel.failed_to_load_config')}
+          />
+          <Btn onClick={() => mcQ.refetch()}>{i18nT('pages.settings.chatPanel.retry')}</Btn>
         </div>
       )}
 
@@ -707,6 +722,14 @@ export function ChatPanel() {
           <SettingsToggle label={i18nT('pages.settings.chatPanel.show_context_percentage')} description={i18nT('pages.settings.chatPanel.display_usage_percentage_next_to_the_context_pro')} checked={chatCfg.showContextPct} onChange={v => setChat('showContextPct', v)} />
           <SettingsToggle label={i18nT('pages.settings.chatPanel.show_token_usage')} description={i18nT('pages.settings.chatPanel.display_used_and_total_tokens_next_to_the_contex')} checked={chatCfg.showContextTokens} onChange={v => setChat('showContextTokens', v)} />
           <SettingsToggle label={i18nT('pages.settings.chatPanel.feature_tips')} description={tipsConfigOff ? i18nT('pages.settings.chatPanel.disabled_by_instance_config_tips_enabled_false') : i18nT('pages.settings.chatPanel.show_occasional_feature_discovery_tips_above_the')} checked={!!tipsQ.data && tipsQ.data.enabled_config && !shownOptedOut} onChange={v => tipsMut.mutate(v)} disabled={tipsConfigOff || tipsQ.isLoading || tipsQ.isError} />
+          {/* A failed status read used to only grey the toggle out, which is
+              indistinguishable from the instance-config gate above. Say why.
+              No hand-off: this panel's `localRoleOther` / `localBudget` /
+              `localKeepChars` drafts would be unmounted by the navigation. */}
+          <ErrorNotice
+            variant="inline"
+            message={tipsQ.isError ? i18nT('pages.settings.chatPanel.failed_to_load_tips_preference') : null}
+          />
           <SettingsToggle label={i18nT('pages.settings.chatPanel.folder_suggestions')} description={i18nT('pages.settings.chatPanel.offer_to_file_a_new_session_into_a_matching_fold')} checked={dashCfg.folder_suggestions_enabled} onChange={v => setDash({ folder_suggestions_enabled: v })} disabled={dashDisabled} />
         </SettingsCard>
       </SettingsSection>

@@ -10467,7 +10467,8 @@
         "strength_measured": "測定済み、差異なし",
         "strength_no_objection": "異議なし",
         "strength_refuted": "共有すると危険",
-        "strength_unknown": "未計測"
+        "strength_unknown": "未計測",
+        "measure_progress_failed": "測定の進行状況を読み取れませんでした。"
       },
       "cancel": "キャンセル",
       "col_server": "サーバー",
@@ -10525,7 +10526,8 @@
       "views_aria": "MCP 管理ビュー",
       "state_direct_env": "直接 (env)",
       "state_direct_env_reason": "スタブなし。選択は保存されたままです。",
-      "state_direct_env_legend": "直接 (env) — 共有バックエンドが渡さない環境変数キーをサーバーが宣言しているため、{{productName}} はスタブを作成しません。セッションが自分で起動し、共有バックエンドもサーバー独自の UI もありません。"
+      "state_direct_env_legend": "直接 (env) — 共有バックエンドが渡さない環境変数キーをサーバーが宣言しているため、{{productName}} はスタブを作成しません。セッションが自分で起動し、共有バックエンドもサーバー独自の UI もありません。",
+      "status_failed": "共有状態を読み込めませんでした。以下のスイッチは保存された値ではなく、デフォルト値を表示しています。"
     },
     "migrationPage": {
       "app_migration": "アプリ移行",
@@ -11843,7 +11845,12 @@
         "channel_explainer_gateway_switch_note_version": "切り替えても変わるのは更新を確認するチャンネルだけです。{{channel}} チャンネルが現在公開しているのは v{{version}} で、実行中のビルドより古いバージョンです。このインストールを実際に移すには下のコマンドを実行してください。",
         "channel_publishes_older_version": "{{channel}} チャンネルが現在公開しているのは v{{version}} で、実行中のビルドより古いため、更新は提示されません。<link>v{{version}} をダウンロード</link>してこのチャンネルに移れます。",
         "switch_to_version": "v{{version}} に切り替える",
-        "in_app_channel_move_intro": "選択したチャンネルのリリースは現在のものと並べてインストールされ、原子的に切り替わります。適用にはゲートウェイホストでの承認コマンドが 1 回必要です。"
+        "in_app_channel_move_intro": "選択したチャンネルのリリースは現在のものと並べてインストールされ、原子的に切り替わります。適用にはゲートウェイホストでの承認コマンドが 1 回必要です。",
+        "arm_status_poll_failing": "ゲートウェイから承認状態を更新できませんでした。カウントダウンはローカルで継続します。",
+        "auto_download_save_failed": "自動ダウンロードの設定を保存できませんでした。",
+        "auto_update_setting_unavailable": "自動更新の設定を読み込めませんでした。読み込まれるまで、スイッチはデフォルト値を表示します。",
+        "copy_failed_select_the_command_and_copy_it_manually": "コピーに失敗しました。コマンドを選択して手動でコピーしてください。",
+        "update_info_unavailable": "このビルドのバージョンと更新チャネルをアプリから読み取れませんでした。"
       },
       "botChannelPanel": {
         "allowed_user_ids": "許可されたユーザー ID",
@@ -11925,7 +11932,13 @@
         "node_how": "インストール後、このページを再度開いてください。<dl>Node.js をダウンロード</dl>",
         "node_no_admin": "Node をインストールできないマシン（管理者権限がない、またはレジストリがログインを要求する場合）では、{{productName}} が動作しているマシンで以下のコマンドを実行してください。スクリプトが Node と CLI をホームディレクトリにインストールし、ネットワークがダウンロードを遮断している場合は対処方法を教えてくれます。",
         "copy_command": "コマンドをコピー",
-        "copied": "コピーしました"
+        "copied": "コピーしました",
+        "builtin_save_failed": "内蔵ブラウザーの設定を保存できませんでした。",
+        "builtin_status_unavailable": "内蔵ブラウザーの設定を読み込めませんでした。",
+        "copy_failed": "コピーに失敗しました。コマンドを選択して手動でコピーしてください。",
+        "engine_download_failed": "ブラウザーのダウンロードを開始できませんでした。",
+        "install_request_failed": "インストールを開始できませんでした。",
+        "token_save_failed": "拡張機能のトークンを保存できませんでした。"
       },
       "channelDisabledPanel": {
         "checking_your_organization_s_channel_policy": "組織のチャネルポリシーを確認中…",
@@ -12124,7 +12137,8 @@
         "widget_density": "ウィジェット密度",
         "your_role": "あなたの役割",
         "session_card_source_links": "セッションカードの PR / Issue チップ",
-        "session_card_source_links_desc": "各セッションのサイドバーカードに、そのセッションで言及されたプルリクエスト、マージリクエスト、Issue ごとにチップを表示します。オフにすると、チップの状態を保つ定期的なプロバイダー呼び出しも停止します。"
+        "session_card_source_links_desc": "各セッションのサイドバーカードに、そのセッションで言及されたプルリクエスト、マージリクエスト、Issue ごとにチップを表示します。オフにすると、チップの状態を保つ定期的なプロバイダー呼び出しも停止します。",
+        "failed_to_load_tips_preference": "ヒントの設定を読み込めませんでした。"
       },
       "computerUsePanel": {
         "accessibility": "アクセシビリティ",
@@ -12260,7 +12274,9 @@
         "view": "表示",
         "zoom_font": "ズーム＆フォント",
         "zoom_level": "ズームレベル",
-        "font_family_option_opendyslexic": "OpenDyslexic"
+        "font_family_option_opendyslexic": "OpenDyslexic",
+        "config_load_failed": "保存された表示設定を読み込めませんでした。読み込まれるまで、シェルと最近のセッションの項目は使用できません。",
+        "recent_tint_save_failed": "最近のセッションのハイライト数を保存できませんでした。"
       },
       "importPanel": {
         "agent_data": "エージェントデータ",
@@ -12334,7 +12350,6 @@
         "disconnect_failed": "{{id}} の切断に失敗しました: {{error}}",
         "dismiss": "閉じる",
         "dismiss_diagnosis": "診断を閉じる",
-        "dismiss_error": "エラーを閉じる",
         "distinct": "個別",
         "ec2_instance_id_i_or_ssm_managed_instance_id_mi": "EC2 インスタンス ID（i-…）または SSM マネージドインスタンス ID（mi-…）。",
         "enable_it_to_let_this_gateway_open_ssh_tunnels_t": "有効にして、このゲートウェイがリモートインスタンスへのトンネル（SSH または AWS SSM）を開き、\n          トップタブバーから切り替えることができるようにします。",
@@ -12431,7 +12446,8 @@
         "test": "テスト",
         "test_sound": "サウンドをテスト",
         "use_default": "デフォルトを使用",
-        "volume": "ボリューム"
+        "volume": "ボリューム",
+        "failed_to_save_channel_setting": "チャネルの設定を保存できませんでした。以前の値に戻しました。"
       },
       "privacyPanel": {
         "recordMetricsDescription": "このマシンでパフォーマンスメトリクスを収集します。",
@@ -12451,7 +12467,8 @@
         "more": "詳細",
         "no_matches_for_query": "「{{query}}」に一致するものはありません。",
         "show": "表示",
-        "unavailable": "利用不可"
+        "unavailable": "利用不可",
+        "live_count_unavailable": "このコントロールのライブ件数は現在利用できません。"
       },
       "releases": {
         "badge_unreleased": "未リリース",

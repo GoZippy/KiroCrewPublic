@@ -599,6 +599,47 @@ custom-rules:
         in-page through `ErrorNotice`; a toast as the ONLY report of it is a
         violation.
 
+      The ban is on the SURFACE, not on a class name. Because the test is
+      "where does the value come from", these shapes are the same violation
+      even though none of them contains `text-danger` or `role="alert"`:
+      - The error is assigned to a variable or prop first and then rendered
+        through a neutral container — `const msg = query.error ?? mutErr`
+        into a plain `<div>`, an `EmptyState subtitle={error}`, a
+        `PageHeader subtitle`, an `error` prop on a child chip, a value
+        carried through redux (`progress.detail`) or interpolated into an
+        i18n string (`i18nT('failed_with', { error })`). Follow the value
+        back to its source; a rename does not launder it.
+      - A toast or notification-center entry (`addNotification`, `useNotify`,
+        a hand-rolled toast) is the ONLY report of a failure that leaves the
+        user in a failed state. Same for a page-local `ToastHost` that
+        bypasses the app-sdk `useNotify` seam: that carve-out exists because
+        the seam cannot host the hand-off, so a local toast the page fully
+        controls gets no carve-out at all.
+      - The error sits in a `role="status"` / `aria-live` region, or in a
+        warn- or muted-toned box (`text-warn`, `text-muted`, a `<td>`). Toning
+        a failure down to a polite status does not make it status; a load
+        that did not happen is still a failure.
+      - The error text lives only in a `title=` / `aria-label=` / tooltip
+        (`InfoTip`) attribute or behind an icon-only glyph. Hover text is not
+        a surface: it is invisible on touch, unreadable to a screen reader in
+        most positions, and offers no hand-off.
+      - A native `alert()` / `window.alert()`. It blocks the tab, carries no
+        context, and cannot hand off; render the failure in-page instead.
+      - The failure is never rendered at all: a `useMutation` with no
+        `onError` and no `isError` read, a `useQuery` whose `isError` never
+        reaches the JSX, a `.catch(() => {})` that turns a transport failure
+        into an empty / not-found / default state, an `if (r.ok) {…}` with no
+        else branch, or a `copyToClipboard` boolean that is ignored so the
+        button paints "Copied" after the write failed. A silent failure is
+        the dead end this rule exists to remove; the diff that adds or
+        touches the request also renders its failure.
+      - One state variable fed by BOTH a client-side validation check and a
+        server rejection, rendered in one place. Split it: the validation
+        hint stays plain text, the rejection goes through `ErrorNotice` with
+        the `askAgent` decision. (The inverse — a validation-only value
+        passed to `ErrorNotice` — dresses a hint as an error and is also
+        wrong.)
+
       Bad:
       ```tsx
       {err && <div className="text-danger text-sm">{err}</div>}

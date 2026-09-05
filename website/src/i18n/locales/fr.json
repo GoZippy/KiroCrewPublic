@@ -10777,7 +10777,8 @@
         "strength_measured": "mesuré, aucune divergence",
         "strength_no_objection": "aucune objection trouvée",
         "strength_refuted": "risqué en partage",
-        "strength_unknown": "non mesuré"
+        "strength_unknown": "non mesuré",
+        "measure_progress_failed": "Impossible de lire la progression de la mesure."
       },
       "cancel": "Annuler",
       "col_server": "Serveur",
@@ -10835,7 +10836,8 @@
       "views_aria": "Vues de gestion MCP",
       "state_direct_env": "direct (env)",
       "state_direct_env_reason": "Aucun stub, mais votre choix reste enregistré.",
-      "state_direct_env_legend": "direct (env) — le serveur déclare une clé d'environnement qu'un backend partagé retiendrait, donc {{productName}} ne crée aucun stub : la session le démarre elle-même, sans backend partagé et sans interface fournie par le serveur."
+      "state_direct_env_legend": "direct (env) — le serveur déclare une clé d'environnement qu'un backend partagé retiendrait, donc {{productName}} ne crée aucun stub : la session le démarre elle-même, sans backend partagé et sans interface fournie par le serveur.",
+      "status_failed": "Impossible de charger l’état de partage. Les interrupteurs ci-dessous affichent les valeurs par défaut, pas ce qui est enregistré."
     },
     "migrationPage": {
       "app_migration": "Migration de l'app",
@@ -12180,7 +12182,12 @@
         "channel_explainer_gateway_switch_note_version": "Changer de canal modifie seulement celui qui est consulté pour les mises à jour. Le canal {{channel}} publie actuellement la v{{version}}, PLUS ANCIENNE que la version que vous exécutez ; exécutez la commande ci-dessous pour déplacer réellement cette installation.",
         "channel_publishes_older_version": "Le canal {{channel}} publie actuellement la v{{version}}, plus ancienne que la version que vous exécutez : il n'a donc aucune mise à jour à proposer. <link>Téléchargez la v{{version}}</link> pour passer sur ce canal.",
         "switch_to_version": "Passer à la v{{version}}",
-        "in_app_channel_move_intro": "La version du canal choisi s'installe à côté de l'actuelle, puis la bascule est atomique. L'application nécessite une commande d'approbation sur l'hôte de la passerelle."
+        "in_app_channel_move_intro": "La version du canal choisi s'installe à côté de l'actuelle, puis la bascule est atomique. L'application nécessite une commande d'approbation sur l'hôte de la passerelle.",
+        "arm_status_poll_failing": "Impossible d’actualiser l’état d’approbation depuis la passerelle. Le compte à rebours continue localement.",
+        "auto_download_save_failed": "Impossible d’enregistrer le réglage de téléchargement automatique.",
+        "auto_update_setting_unavailable": "Impossible de charger le réglage de mise à jour automatique. L’interrupteur affiche la valeur par défaut jusqu’au chargement.",
+        "copy_failed_select_the_command_and_copy_it_manually": "Échec de la copie. Sélectionne la commande et copie-la manuellement.",
+        "update_info_unavailable": "Impossible de lire la version et le canal de mise à jour de ce build depuis l’application."
       },
       "botChannelPanel": {
         "allowed_user_ids": "ID d'utilisateurs autorisés",
@@ -12262,7 +12269,13 @@
         "node_how": "Installez-le, puis rouvrez cette page. <dl>Télécharger Node.js</dl>",
         "node_no_admin": "Sur une machine où vous ne pouvez pas installer Node — pas de droits administrateur, ou un registre qui exige une connexion — exécutez la commande ci-dessous sur la machine où {{productName}} fonctionne. Le script installe Node et la CLI dans votre répertoire personnel et vous explique comment corriger le problème si votre réseau bloque le téléchargement.",
         "copy_command": "Copier la commande",
-        "copied": "Copié"
+        "copied": "Copié",
+        "builtin_save_failed": "Impossible d’enregistrer le réglage du navigateur intégré.",
+        "builtin_status_unavailable": "Impossible de charger le réglage du navigateur intégré.",
+        "copy_failed": "Échec de la copie. Sélectionne la commande et copie-la manuellement.",
+        "engine_download_failed": "Impossible de démarrer le téléchargement du navigateur.",
+        "install_request_failed": "Impossible de démarrer l’installation.",
+        "token_save_failed": "Impossible d’enregistrer le jeton de l’extension."
       },
       "channelDisabledPanel": {
         "checking_your_organization_s_channel_policy": "Vérification de la politique de canaux de votre organisation…",
@@ -12461,7 +12474,8 @@
         "widget_density": "Densité des widgets",
         "your_role": "Votre rôle",
         "session_card_source_links": "Puces PR et issues sur les cartes de session",
-        "session_card_source_links_desc": "Affiche sur la carte de chaque session, dans la barre latérale, une puce pour chaque pull request, merge request ou issue mentionnée dans cette session. Désactivé, cela arrête aussi les appels périodiques au fournisseur qui tiennent ces puces à jour."
+        "session_card_source_links_desc": "Affiche sur la carte de chaque session, dans la barre latérale, une puce pour chaque pull request, merge request ou issue mentionnée dans cette session. Désactivé, cela arrête aussi les appels périodiques au fournisseur qui tiennent ces puces à jour.",
+        "failed_to_load_tips_preference": "Impossible de charger la préférence des astuces."
       },
       "computerUsePanel": {
         "accessibility": "Accessibilité",
@@ -12597,7 +12611,9 @@
         "view": "Vue",
         "zoom_font": "Zoom et police",
         "zoom_level": "Niveau de zoom",
-        "font_family_option_opendyslexic": "OpenDyslexic"
+        "font_family_option_opendyslexic": "OpenDyslexic",
+        "config_load_failed": "Impossible de charger les réglages d’affichage enregistrés. Les champs du shell et des sessions récentes sont indisponibles jusqu’au chargement.",
+        "recent_tint_save_failed": "Impossible d’enregistrer le nombre de sessions récentes mises en évidence."
       },
       "importPanel": {
         "agent_data": "Données de l'agent",
@@ -12671,7 +12687,6 @@
         "disconnect_failed": "Échec de la déconnexion de {{id}} : {{error}}",
         "dismiss": "Ignorer",
         "dismiss_diagnosis": "Ignorer le diagnostic",
-        "dismiss_error": "Ignorer l'erreur",
         "distinct": "distinct",
         "ec2_instance_id_i_or_ssm_managed_instance_id_mi": "Id d'instance EC2 (i-…) ou id d'instance gérée SSM (mi-…).",
         "enable_it_to_let_this_gateway_open_ssh_tunnels_t": "Activez-la pour permettre à cette passerelle d'ouvrir des tunnels (SSH ou AWS SSM) vers vos instances\n          distantes et de basculer entre elles depuis la barre d'onglets du haut.",
@@ -12768,7 +12783,8 @@
         "test_sound": "Tester le son",
         "use_default": "Utiliser la valeur par défaut",
         "volume": "Volume",
-        "preset_pulse": "Pulsion"
+        "preset_pulse": "Pulsion",
+        "failed_to_save_channel_setting": "Impossible d’enregistrer le réglage du canal. La valeur précédente a été rétablie."
       },
       "privacyPanel": {
         "recordMetricsDescription": "Collecter les métriques de performance sur cette machine.",
@@ -12788,7 +12804,8 @@
         "more": "de plus",
         "no_matches_for_query": "Aucun résultat pour “{{query}}”.",
         "show": "Afficher",
-        "unavailable": "indisponible"
+        "unavailable": "indisponible",
+        "live_count_unavailable": "Le décompte en direct de ce contrôle est indisponible pour le moment."
       },
       "releases": {
         "badge_unreleased": "Non publiée",

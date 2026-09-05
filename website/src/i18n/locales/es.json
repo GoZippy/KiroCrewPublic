@@ -10777,7 +10777,8 @@
         "strength_measured": "medido, sin divergencia",
         "strength_no_objection": "no se encontró objeción",
         "strength_refuted": "no es seguro compartirlo",
-        "strength_unknown": "no medido"
+        "strength_unknown": "no medido",
+        "measure_progress_failed": "No se pudo leer el progreso de la medición."
       },
       "cancel": "Cancelar",
       "col_server": "Servidor",
@@ -10835,7 +10836,8 @@
       "views_aria": "Vistas de gestión de MCP",
       "state_direct_env": "directo (env)",
       "state_direct_env_reason": "Sin stub, pero tu selección sigue guardada.",
-      "state_direct_env_legend": "directo (env): el servidor declara una clave de entorno que un backend compartido retendría, así que {{productName}} no crea ningún stub: la sesión lo inicia por su cuenta, sin backend compartido y sin interfaz propia del servidor."
+      "state_direct_env_legend": "directo (env): el servidor declara una clave de entorno que un backend compartido retendría, así que {{productName}} no crea ningún stub: la sesión lo inicia por su cuenta, sin backend compartido y sin interfaz propia del servidor.",
+      "status_failed": "No se pudo cargar el estado de compartición. Los interruptores de abajo muestran valores predeterminados, no lo que está guardado."
     },
     "migrationPage": {
       "app_migration": "Migración de la app",
@@ -12180,7 +12182,12 @@
         "channel_explainer_gateway_switch_note_version": "Cambiar solo modifica qué canal se consulta en busca de actualizaciones. El canal {{channel}} publica actualmente la v{{version}}, MÁS ANTIGUA que la compilación que estás ejecutando: ejecuta el comando de abajo para mover realmente esta instalación.",
         "channel_publishes_older_version": "El canal {{channel}} publica actualmente la v{{version}}, más antigua que la compilación que estás ejecutando, así que no ofrece ninguna actualización. <link>Descarga la v{{version}}</link> para pasar a ese canal.",
         "switch_to_version": "Cambiar a la v{{version}}",
-        "in_app_channel_move_intro": "La versión del canal elegido se instala junto a la actual y el cambio es atómico. Aplicarlo requiere un comando de aprobación en el host de la pasarela."
+        "in_app_channel_move_intro": "La versión del canal elegido se instala junto a la actual y el cambio es atómico. Aplicarlo requiere un comando de aprobación en el host de la pasarela.",
+        "arm_status_poll_failing": "No se pudo actualizar el estado de aprobación desde el gateway. La cuenta atrás sigue corriendo localmente.",
+        "auto_download_save_failed": "No se pudo guardar el ajuste de descarga automática.",
+        "auto_update_setting_unavailable": "No se pudo cargar el ajuste de actualización automática. El interruptor muestra el valor predeterminado hasta que se cargue.",
+        "copy_failed_select_the_command_and_copy_it_manually": "No se pudo copiar. Selecciona el comando y cópialo manualmente.",
+        "update_info_unavailable": "No se pudo leer la versión y el canal de actualización de esta compilación desde la app."
       },
       "botChannelPanel": {
         "allowed_user_ids": "IDs de usuario permitidos",
@@ -12262,7 +12269,13 @@
         "node_how": "Instálalo y vuelve a abrir esta página. <dl>Descargar Node.js</dl>",
         "node_no_admin": "En un equipo donde no puede instalar Node —sin permisos de administrador o con un registro que exige iniciar sesión— ejecute el comando siguiente en el equipo donde se ejecuta {{productName}}. El script instala Node y la CLI en su directorio personal y le indica cómo solucionarlo si su red bloquea la descarga.",
         "copy_command": "Copiar comando",
-        "copied": "Copiado"
+        "copied": "Copiado",
+        "builtin_save_failed": "No se pudo guardar el ajuste del navegador integrado.",
+        "builtin_status_unavailable": "No se pudo cargar el ajuste del navegador integrado.",
+        "copy_failed": "No se pudo copiar. Selecciona el comando y cópialo manualmente.",
+        "engine_download_failed": "No se pudo iniciar la descarga del navegador.",
+        "install_request_failed": "No se pudo iniciar la instalación.",
+        "token_save_failed": "No se pudo guardar el token de la extensión."
       },
       "channelDisabledPanel": {
         "checking_your_organization_s_channel_policy": "Comprobando la política de canales de tu organización…",
@@ -12461,7 +12474,8 @@
         "widget_density": "Densidad de widgets",
         "your_role": "Tu rol",
         "session_card_source_links": "Chips de PR e incidencias en las tarjetas de sesión",
-        "session_card_source_links_desc": "Muestra en la tarjeta de cada sesión de la barra lateral un chip por cada pull request, merge request o incidencia mencionada en esa sesión. Al desactivarlo también se detienen las llamadas periódicas al proveedor que mantienen esos chips al día."
+        "session_card_source_links_desc": "Muestra en la tarjeta de cada sesión de la barra lateral un chip por cada pull request, merge request o incidencia mencionada en esa sesión. Al desactivarlo también se detienen las llamadas periódicas al proveedor que mantienen esos chips al día.",
+        "failed_to_load_tips_preference": "No se pudo cargar la preferencia de consejos."
       },
       "computerUsePanel": {
         "accessibility": "Accesibilidad",
@@ -12597,7 +12611,9 @@
         "view": "Vista",
         "zoom_font": "Zoom y tipografía",
         "zoom_level": "Nivel de zoom",
-        "font_family_option_opendyslexic": "OpenDyslexic"
+        "font_family_option_opendyslexic": "OpenDyslexic",
+        "config_load_failed": "No se pudieron cargar los ajustes de pantalla guardados. Los campos de shell y de sesiones recientes no están disponibles hasta que se carguen.",
+        "recent_tint_save_failed": "No se pudo guardar el número de sesiones recientes resaltadas."
       },
       "importPanel": {
         "agent_data": "Datos del agente",
@@ -12671,7 +12687,6 @@
         "disconnect_failed": "No se pudo desconectar {{id}}: {{error}}",
         "dismiss": "Descartar",
         "dismiss_diagnosis": "Descartar el diagnóstico",
-        "dismiss_error": "Descartar el error",
         "distinct": "distinto",
         "ec2_instance_id_i_or_ssm_managed_instance_id_mi": "Id de instancia EC2 (i-…) o id de instancia gestionada de SSM (mi-…).",
         "enable_it_to_let_this_gateway_open_ssh_tunnels_t": "Actívala para permitir que esta pasarela abra túneles (SSH o AWS SSM) hacia tus instancias remotas y\n          alternar entre ellas desde la barra de pestañas superior.",
@@ -12768,7 +12783,8 @@
         "test_sound": "Probar sonido",
         "use_default": "Usar el valor predeterminado",
         "volume": "Volumen",
-        "preset_pulse": "Pulso"
+        "preset_pulse": "Pulso",
+        "failed_to_save_channel_setting": "No se pudo guardar el ajuste del canal. Se restauró el valor anterior."
       },
       "privacyPanel": {
         "recordMetricsLabel": "Registrar métricas",
@@ -12788,7 +12804,8 @@
         "more": "más",
         "no_matches_for_query": "No hay resultados para “{{query}}”.",
         "show": "Mostrar",
-        "unavailable": "no disponible"
+        "unavailable": "no disponible",
+        "live_count_unavailable": "El recuento en vivo de este control no está disponible ahora mismo."
       },
       "releases": {
         "badge_unreleased": "Sin publicar",

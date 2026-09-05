@@ -10467,7 +10467,8 @@
         "strength_measured": "已测量，无分歧",
         "strength_no_objection": "未发现异议",
         "strength_refuted": "共享时不安全",
-        "strength_unknown": "未测量"
+        "strength_unknown": "未测量",
+        "measure_progress_failed": "无法读取测量进度。"
       },
       "cancel": "取消",
       "col_server": "服务器",
@@ -10525,7 +10526,8 @@
       "views_aria": "MCP 管理视图",
       "state_direct_env": "直连（环境变量）",
       "state_direct_env_reason": "未插桩，但你的选择仍然保存。",
-      "state_direct_env_legend": "直连（环境变量） —— 该服务器声明了共享后端不会传递的环境变量密钥，因此 {{productName}} 完全不为它插桩：由会话自行启动，既无共享后端，也无服务器自绘界面。"
+      "state_direct_env_legend": "直连（环境变量） —— 该服务器声明了共享后端不会传递的环境变量密钥，因此 {{productName}} 完全不为它插桩：由会话自行启动，既无共享后端，也无服务器自绘界面。",
+      "status_failed": "无法加载共享状态。下方开关显示默认值，而非已保存的值。"
     },
     "migrationPage": {
       "app_migration": "应用迁移",
@@ -11843,7 +11845,12 @@
         "channel_explainer_gateway_switch_note_version": "切换仅改变检查更新的渠道。{{channel}} 通道当前发布的是 v{{version}}，比你正在运行的版本更旧——请运行下方命令，才会真正将此安装切换过去。",
         "channel_publishes_older_version": "{{channel}} 通道当前发布的是 v{{version}}，比你正在运行的版本更旧，因此不会提示更新。<link>下载 v{{version}}</link> 即可切换到该通道。",
         "switch_to_version": "切换到 v{{version}}",
-        "in_app_channel_move_intro": "所选通道的版本会安装在当前版本旁边，然后原子切换过去。应用时需在网关主机上执行一条批准命令。"
+        "in_app_channel_move_intro": "所选通道的版本会安装在当前版本旁边，然后原子切换过去。应用时需在网关主机上执行一条批准命令。",
+        "arm_status_poll_failing": "无法从网关刷新审批状态。倒计时会继续在本地运行。",
+        "auto_download_save_failed": "无法保存自动下载设置。",
+        "auto_update_setting_unavailable": "无法加载自动更新设置。加载完成前，开关显示的是默认值。",
+        "copy_failed_select_the_command_and_copy_it_manually": "复制失败。请选中命令并手动复制。",
+        "update_info_unavailable": "无法从应用读取此构建的版本和更新渠道。"
       },
       "botChannelPanel": {
         "allowed_user_ids": "允许的用户 ID",
@@ -11925,7 +11932,13 @@
         "node_how": "安装后重新打开本页面。<dl>下载 Node.js</dl>",
         "node_no_admin": "在无法安装 Node 的机器上（没有管理员权限，或者注册表需要登录），请在运行 {{productName}} 的那台机器上执行以下命令。脚本会把 Node 和 CLI 安装到你的主目录，并在网络阻止下载时告诉你如何解决。",
         "copy_command": "复制命令",
-        "copied": "已复制"
+        "copied": "已复制",
+        "builtin_save_failed": "无法保存内置浏览器设置。",
+        "builtin_status_unavailable": "无法加载内置浏览器设置。",
+        "copy_failed": "复制失败。请选中命令并手动复制。",
+        "engine_download_failed": "无法开始下载浏览器。",
+        "install_request_failed": "无法开始安装。",
+        "token_save_failed": "无法保存扩展令牌。"
       },
       "channelDisabledPanel": {
         "checking_your_organization_s_channel_policy": "正在检查你所在组织的渠道策略…",
@@ -12124,7 +12137,8 @@
         "widget_density": "小组件密度",
         "your_role": "你的角色",
         "session_card_source_links": "会话卡片上的 PR 与 issue 标签",
-        "session_card_source_links_desc": "在每个会话的侧边栏卡片上，为该会话中提到的每个拉取请求、合并请求和 issue 显示一个标签。关闭后，也会停止用于更新这些标签状态的定期服务商调用。"
+        "session_card_source_links_desc": "在每个会话的侧边栏卡片上，为该会话中提到的每个拉取请求、合并请求和 issue 显示一个标签。关闭后，也会停止用于更新这些标签状态的定期服务商调用。",
+        "failed_to_load_tips_preference": "无法加载提示偏好设置。"
       },
       "computerUsePanel": {
         "accessibility": "辅助功能",
@@ -12260,7 +12274,9 @@
         "view": "视图",
         "zoom_font": "缩放与字体",
         "zoom_level": "缩放级别",
-        "font_family_option_opendyslexic": "OpenDyslexic"
+        "font_family_option_opendyslexic": "OpenDyslexic",
+        "config_load_failed": "无法加载已保存的显示设置。加载完成前，Shell 和最近会话字段不可用。",
+        "recent_tint_save_failed": "无法保存最近会话的高亮数量。"
       },
       "importPanel": {
         "agent_data": "代理数据",
@@ -12334,7 +12350,6 @@
         "disconnect_failed": "断开 {{id}} 连接失败：{{error}}",
         "dismiss": "忽略",
         "dismiss_diagnosis": "忽略诊断",
-        "dismiss_error": "忽略错误",
         "distinct": "不同的",
         "ec2_instance_id_i_or_ssm_managed_instance_id_mi": "EC2 实例 id（i-…）或 SSM 托管实例 id（mi-…）。",
         "enable_it_to_let_this_gateway_open_ssh_tunnels_t": "启用后可让此网关向你的远程实例打开隧道（SSH 或 AWS SSM），并从顶部标签栏\n          在它们之间切换。",
@@ -12431,7 +12446,8 @@
         "test_sound": "测试提示音",
         "use_default": "使用默认",
         "volume": "音量",
-        "preset_pulse": "脉冲"
+        "preset_pulse": "脉冲",
+        "failed_to_save_channel_setting": "无法保存渠道设置。已恢复为之前的值。"
       },
       "privacyPanel": {
         "recordMetricsLabel": "记录指标",
@@ -12451,7 +12467,8 @@
         "more": "更多",
         "no_matches_for_query": "无匹配结果：“{{query}}”。",
         "show": "展开",
-        "unavailable": "不可用"
+        "unavailable": "不可用",
+        "live_count_unavailable": "此控制项的实时计数目前不可用。"
       },
       "releases": {
         "badge_unreleased": "未发布",

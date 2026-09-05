@@ -10622,7 +10622,8 @@
         "strength_measured": "gemessen, keine Abweichung",
         "strength_no_objection": "kein Einwand gefunden",
         "strength_refuted": "beim Teilen unsicher",
-        "strength_unknown": "nicht gemessen"
+        "strength_unknown": "nicht gemessen",
+        "measure_progress_failed": "Der Messfortschritt konnte nicht gelesen werden."
       },
       "cancel": "Abbrechen",
       "col_server": "Server",
@@ -10680,7 +10681,8 @@
       "views_aria": "MCP-Verwaltungsansichten",
       "state_direct_env": "direkt (env)",
       "state_direct_env_reason": "Kein Stub, aber Ihre Auswahl bleibt gespeichert.",
-      "state_direct_env_legend": "direkt (env) — der Server deklariert einen Umgebungsschlüssel, den ein geteiltes Backend zurückhalten würde, daher erstellt {{productName}} gar keinen Stub: die Sitzung startet ihn selbst, ohne geteiltes Backend und ohne servereigene Oberfläche."
+      "state_direct_env_legend": "direkt (env) — der Server deklariert einen Umgebungsschlüssel, den ein geteiltes Backend zurückhalten würde, daher erstellt {{productName}} gar keinen Stub: die Sitzung startet ihn selbst, ohne geteiltes Backend und ohne servereigene Oberfläche.",
+      "status_failed": "Der Freigabestatus konnte nicht geladen werden. Die Schalter unten zeigen Standardwerte, nicht die gespeicherten Werte."
     },
     "migrationPage": {
       "app_migration": "App-Migration",
@@ -12011,7 +12013,12 @@
         "channel_explainer_gateway_switch_note_version": "Ein Wechsel ändert nur, welcher Kanal auf Updates geprüft wird. Der Kanal {{channel}} veröffentlicht derzeit v{{version}} – ÄLTER als der laufende Build. Führe den Befehl unten aus, um diese Installation wirklich umzustellen.",
         "channel_publishes_older_version": "Der Kanal {{channel}} veröffentlicht derzeit v{{version}} – älter als der laufende Build, daher gibt es kein Update. <link>Lade v{{version}} herunter</link>, um auf diesen Kanal zu wechseln.",
         "switch_to_version": "Zu v{{version}} wechseln",
-        "in_app_channel_move_intro": "Das Release des gewählten Kanals wird neben dem aktuellen installiert und atomar umgeschaltet. Das Anwenden erfordert einen Bestätigungsbefehl auf dem Gateway-Host."
+        "in_app_channel_move_intro": "Das Release des gewählten Kanals wird neben dem aktuellen installiert und atomar umgeschaltet. Das Anwenden erfordert einen Bestätigungsbefehl auf dem Gateway-Host.",
+        "arm_status_poll_failing": "Der Freigabestatus konnte nicht vom Gateway aktualisiert werden. Der Countdown läuft lokal weiter.",
+        "auto_download_save_failed": "Die Einstellung für automatische Downloads konnte nicht gespeichert werden.",
+        "auto_update_setting_unavailable": "Die Auto-Update-Einstellung konnte nicht geladen werden. Der Schalter zeigt den Standardwert, bis sie geladen ist.",
+        "copy_failed_select_the_command_and_copy_it_manually": "Kopieren fehlgeschlagen. Markiere den Befehl und kopiere ihn manuell.",
+        "update_info_unavailable": "Version und Update-Kanal dieses Builds konnten nicht aus der App gelesen werden."
       },
       "botChannelPanel": {
         "allowed_user_ids": "Erlaubte Benutzer-IDs",
@@ -12093,7 +12100,13 @@
         "node_how": "Installieren Sie es und öffnen Sie diese Seite erneut. <dl>Node.js herunterladen</dl>",
         "node_no_admin": "Auf einem Rechner, auf dem Sie Node nicht installieren können – keine Administratorrechte oder eine Registry, die eine Anmeldung verlangt – führen Sie den folgenden Befehl auf dem Rechner aus, auf dem {{productName}} läuft. Das Skript installiert Node und die CLI in Ihr Home-Verzeichnis und erklärt Ihnen, wie Sie es beheben, falls Ihr Netzwerk den Download blockiert.",
         "copy_command": "Befehl kopieren",
-        "copied": "Kopiert"
+        "copied": "Kopiert",
+        "builtin_save_failed": "Die Einstellung für den integrierten Browser konnte nicht gespeichert werden.",
+        "builtin_status_unavailable": "Die Einstellung für den integrierten Browser konnte nicht geladen werden.",
+        "copy_failed": "Kopieren fehlgeschlagen. Markiere den Befehl und kopiere ihn manuell.",
+        "engine_download_failed": "Der Browser-Download konnte nicht gestartet werden.",
+        "install_request_failed": "Die Installation konnte nicht gestartet werden.",
+        "token_save_failed": "Das Erweiterungs-Token konnte nicht gespeichert werden."
       },
       "channelDisabledPanel": {
         "checking_your_organization_s_channel_policy": "Die Kanalrichtlinie Ihrer Organisation wird geprüft…",
@@ -12292,7 +12305,8 @@
         "widget_density": "Widget-Dichte",
         "your_role": "Ihre Rolle",
         "session_card_source_links": "PR- und Issue-Chips auf Sitzungskarten",
-        "session_card_source_links_desc": "Zeigt auf der Seitenleistenkarte jeder Sitzung einen Chip für jeden Pull Request, jeden Merge Request und jedes Issue, das in dieser Sitzung erwähnt wird. Ausgeschaltet entfallen auch die regelmäßigen Anbieteraufrufe, die diese Chips aktuell halten."
+        "session_card_source_links_desc": "Zeigt auf der Seitenleistenkarte jeder Sitzung einen Chip für jeden Pull Request, jeden Merge Request und jedes Issue, das in dieser Sitzung erwähnt wird. Ausgeschaltet entfallen auch die regelmäßigen Anbieteraufrufe, die diese Chips aktuell halten.",
+        "failed_to_load_tips_preference": "Die Einstellung für Tipps konnte nicht geladen werden."
       },
       "computerUsePanel": {
         "accessibility": "Bedienungshilfen",
@@ -12428,7 +12442,9 @@
         "view": "Ansicht",
         "zoom_font": "Zoom & Schrift",
         "zoom_level": "Zoomstufe",
-        "font_family_option_opendyslexic": "OpenDyslexic"
+        "font_family_option_opendyslexic": "OpenDyslexic",
+        "config_load_failed": "Die gespeicherten Anzeigeeinstellungen konnten nicht geladen werden. Die Felder für Shell und letzte Sitzungen sind nicht verfügbar, bis sie geladen sind.",
+        "recent_tint_save_failed": "Die Anzahl hervorgehobener letzter Sitzungen konnte nicht gespeichert werden."
       },
       "importPanel": {
         "agent_data": "Agenten-Daten",
@@ -12502,7 +12518,6 @@
         "disconnect_failed": "Trennen der Verbindung zu {{id}} fehlgeschlagen: {{error}}",
         "dismiss": "Schließen",
         "dismiss_diagnosis": "Diagnose schließen",
-        "dismiss_error": "Fehler schließen",
         "distinct": "eindeutig",
         "ec2_instance_id_i_or_ssm_managed_instance_id_mi": "EC2-Instanz-ID (i-…) oder SSM-Managed-Instance-ID (mi-…).",
         "enable_it_to_let_this_gateway_open_ssh_tunnels_t": "Aktivieren Sie dies, damit dieses Gateway Tunnel (SSH oder AWS SSM) zu Ihren Remote-Instanzen\n          öffnen und über die obere Tab-Leiste zwischen ihnen wechseln kann.",
@@ -12599,7 +12614,8 @@
         "test_sound": "Ton testen",
         "use_default": "Standard verwenden",
         "volume": "Lautstärke",
-        "preset_pulse": "Puls"
+        "preset_pulse": "Puls",
+        "failed_to_save_channel_setting": "Die Kanaleinstellung konnte nicht gespeichert werden. Der vorherige Wert wurde wiederhergestellt."
       },
       "privacyPanel": {
         "recordMetricsDescription": "Leistungsmetriken auf diesem Rechner erfassen.",
@@ -12619,7 +12635,8 @@
         "more": "mehr",
         "no_matches_for_query": "Keine Treffer für „{{query}}“.",
         "show": "Anzeigen",
-        "unavailable": "nicht verfügbar"
+        "unavailable": "nicht verfügbar",
+        "live_count_unavailable": "Die Live-Anzahl für diese Kontrolle ist derzeit nicht verfügbar."
       },
       "releases": {
         "badge_unreleased": "Unveröffentlicht",
