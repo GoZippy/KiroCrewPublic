@@ -63,7 +63,7 @@ const KIND_ICON: Record<TabKind, ReactNode> = {
  * Keyed by `ViewKind | 'terminal'` (not `string`) so adding a view without its
  * label and description is a type error rather than a missing-key render.
  */
-export const NEW_MENU_LABEL_KEY: Record<ViewKind, string> = {
+export const NEW_MENU_LABEL_KEY: Record<ViewKind | 'terminal', string> = {
   changes: 'pages.chat.sidePanel.menu_changes',
   issues: 'pages.chat.sidePanel.menu_issues',
   files: 'pages.chat.sidePanel.menu_files',
@@ -75,12 +75,13 @@ export const NEW_MENU_LABEL_KEY: Record<ViewKind, string> = {
   context: 'pages.chat.sidePanel.menu_context',
   side: 'pages.chat.sidePanel.menu_side',
   browser: 'pages.chat.sidePanel.menu_browser',
+  terminal: 'pages.chat.sidePanel.menu_terminal',
   git: 'pages.chat.sidePanel.menu_git',
   summary: 'pages.chat.sidePanel.menu_summary',
   pins: 'pages.chat.sidePanel.menu_pins',
 }
 
-export const NEW_MENU_DESC_KEY: Record<ViewKind, string> = {
+export const NEW_MENU_DESC_KEY: Record<ViewKind | 'terminal', string> = {
   changes: 'pages.chat.sidePanel.menu_changes_desc',
   issues: 'pages.chat.sidePanel.menu_issues_desc',
   files: 'pages.chat.sidePanel.menu_files_desc',
@@ -92,6 +93,7 @@ export const NEW_MENU_DESC_KEY: Record<ViewKind, string> = {
   context: 'pages.chat.sidePanel.menu_context_desc',
   side: 'pages.chat.sidePanel.menu_side_desc',
   browser: 'pages.chat.sidePanel.menu_browser_desc',
+  terminal: 'pages.chat.sidePanel.menu_terminal_desc',
   git: 'pages.chat.sidePanel.menu_git_desc',
   summary: 'pages.chat.sidePanel.menu_summary_desc',
   pins: 'pages.chat.sidePanel.menu_pins_desc',
@@ -118,7 +120,7 @@ export const NEW_MENU_DESC_KEY: Record<ViewKind, string> = {
  *  Every key of `NEW_MENU_LABEL_KEY` must appear exactly once across the
  *  groups — `sidePanelAddMenu.test.tsx` pins that partition, so adding a view
  *  without placing it in a group fails rather than silently dropping it. */
-const NEW_MENU_GROUPS: { id: string; items: { kind: ViewKind; icon: ReactNode }[] }[] = [
+const NEW_MENU_GROUPS: { id: string; items: { kind: ViewKind | 'terminal'; icon: ReactNode }[] }[] = [
   // Session output — what this chat referenced or produced. (Changes / Files /
   // Artifacts are auto-pinned and filtered out below; they are listed here so
   // this table stays the complete catalog of views.)
@@ -137,12 +139,15 @@ const NEW_MENU_GROUPS: { id: string; items: { kind: ViewKind; icon: ReactNode }[
       { kind: 'git', icon: <GitBranch size={15} /> },
     ],
   },
-  // Interactive workspaces — the surfaces the user types into.
+  // Interactive workspaces — the surfaces the user types into. Terminal is a
+  // per-chat shell: its tab lives in this chat's panel state, so it comes and
+  // goes with the session, unlike the app-wide dock terminal in the nav rail.
   {
     id: 'workspaces',
     items: [
       { kind: 'side', icon: <MessageCircleQuestionMark size={15} /> },
       { kind: 'browser', icon: <Globe size={15} /> },
+      { kind: 'terminal', icon: <TerminalSquare size={15} /> },
     ],
   },
   // Diagnostics.
@@ -164,10 +169,11 @@ const VIEW_KINDS = new Set<TabKind>(['changes', 'issues', 'links', 'files', 'art
  *  belongs in a non-developer's menu. Gating BOTH empties the diagnostics group
  *  outright when Developer Mode is off — which is exactly the empty-group case
  *  `newMenuSections` drops. */
-const DEV_ONLY_VIEWS = new Set<ViewKind>(['logs', 'context'])
+const DEV_ONLY_VIEWS = new Set<ViewKind | 'terminal'>(['logs', 'context'])
 
 /** Which `+`-menu entries are offered, given the gates that hide entries:
- *  the diagnostics views (Logs, Context breakdown) are hidden unless Developer
+ *  Terminal is hidden when the feature is disabled server-side, the
+ *  diagnostics views (Logs, Context breakdown) are hidden unless Developer
  *  Mode is on, and **Summary is hidden while session summaries are disabled**.
  *  The auto-managed pinned views (Changes / Files / Artifacts) are never listed;
  *  they appear on their own when they have content.
@@ -180,16 +186,18 @@ const DEV_ONLY_VIEWS = new Set<ViewKind>(['logs', 'context'])
  *  flips.
  *
  *  Grouped, and **emptied groups are dropped**: with Developer Mode off the
- *  whole diagnostics group disappears. A group that filtered down to nothing
- *  would otherwise render as a separator with no rows after it. */
+ *  whole diagnostics group disappears, and Terminal disabled shrinks Workspaces
+ *  to two rows. A group that filtered down to nothing would otherwise render
+ *  as a separator with no rows after it. */
 export function newMenuSections(
   opts: { devMode: boolean; terminalEnabled: boolean; summaryEnabled: boolean },
-): { id: string; items: { kind: ViewKind; icon: ReactNode }[] }[] {
+): { id: string; items: { kind: ViewKind | 'terminal'; icon: ReactNode }[] }[] {
   return NEW_MENU_GROUPS
     .map(group => ({
       id: group.id,
       items: group.items.filter(item =>
-        (opts.devMode || !DEV_ONLY_VIEWS.has(item.kind))
+        (opts.terminalEnabled || item.kind !== 'terminal')
+        && (opts.devMode || !DEV_ONLY_VIEWS.has(item.kind))
         && (opts.summaryEnabled || item.kind !== 'summary')
         && !(PINNED_VIEWS as string[]).includes(item.kind),
       ),

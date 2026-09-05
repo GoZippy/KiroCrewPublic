@@ -9287,6 +9287,8 @@
         "menu_artifacts_desc": "Документы и избранное в сессии",
         "menu_browser": "Браузер",
         "menu_browser_desc": "Посмотреть веб-страницу или локальный dev-сервер",
+        "menu_terminal": "Терминал",
+        "menu_terminal_desc": "Оболочка на хосте шлюза, привязанная к этому чату",
         "menu_changes": "Изменения",
         "menu_changes_desc": "Пул-реквесты, проверки и ревью",
         "menu_context": "Состав контекста",

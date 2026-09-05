@@ -8912,6 +8912,8 @@
         "menu_artifacts_desc": "会话内的文档与收藏",
         "menu_browser": "浏览器",
         "menu_browser_desc": "查看网页或本地开发服务器",
+        "menu_terminal": "终端",
+        "menu_terminal_desc": "网关主机上的 Shell，仅属于当前对话",
         "menu_changes": "变更",
         "menu_changes_desc": "拉取请求、检查与审查",
         "menu_context": "上下文构成",

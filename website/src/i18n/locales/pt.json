@@ -9162,6 +9162,8 @@
         "menu_artifacts_desc": "Documentos e favoritos da sessão",
         "menu_browser": "Navegador",
         "menu_browser_desc": "Ver uma página web ou um servidor de desenvolvimento local",
+        "menu_terminal": "Terminal",
+        "menu_terminal_desc": "Shell no host do gateway, restrito a esta conversa",
         "menu_changes": "Alterações",
         "menu_changes_desc": "Pull requests, verificações e revisões",
         "menu_context": "Detalhamento do contexto",

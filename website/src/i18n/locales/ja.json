@@ -8912,6 +8912,8 @@
         "menu_artifacts_desc": "セッション内のドキュメントとスター",
         "menu_browser": "ブラウザー",
         "menu_browser_desc": "Web ページまたはローカル開発サーバーを表示",
+        "menu_terminal": "ターミナル",
+        "menu_terminal_desc": "ゲートウェイホスト上のシェル（このチャット専用）",
         "menu_changes": "変更",
         "menu_changes_desc": "プルリクエスト、チェック、レビュー",
         "menu_context": "コンテキスト内訳",

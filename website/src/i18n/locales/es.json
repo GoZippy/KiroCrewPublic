@@ -9162,6 +9162,8 @@
         "menu_artifacts_desc": "Documentos y favoritos de la sesión",
         "menu_browser": "Navegador",
         "menu_browser_desc": "Ver una página web o un servidor de desarrollo local",
+        "menu_terminal": "Terminal",
+        "menu_terminal_desc": "Shell en el host del gateway, limitada a este chat",
         "menu_changes": "Cambios",
         "menu_changes_desc": "Pull requests, comprobaciones y revisiones",
         "menu_context": "Desglose del contexto",

@@ -8912,6 +8912,8 @@
         "menu_artifacts_desc": "세션 내 문서와 별표",
         "menu_browser": "브라우저",
         "menu_browser_desc": "웹 페이지 또는 로컬 개발 서버 보기",
+        "menu_terminal": "터미널",
+        "menu_terminal_desc": "게이트웨이 호스트의 셸, 이 채팅에만 연결",
         "menu_changes": "변경 사항",
         "menu_changes_desc": "풀 리퀘스트·체크·리뷰",
         "menu_context": "컨텍스트 내역",

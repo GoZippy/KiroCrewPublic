@@ -9037,6 +9037,8 @@
         "menu_artifacts_desc": "সেশনের ভেতরের ডকুমেন্ট ও স্টার",
         "menu_browser": "ব্রাউজার",
         "menu_browser_desc": "একটি ওয়েব পেজ বা লোকাল ডেভ সার্ভার দেখো",
+        "menu_terminal": "টার্মিনাল",
+        "menu_terminal_desc": "গেটওয়ে হোস্টে শেল, শুধু এই চ্যাটের জন্য",
         "menu_changes": "পরিবর্তন",
         "menu_changes_desc": "পুল রিকোয়েস্ট, চেক ও রিভিউ",
         "menu_context": "কনটেক্সট বিশ্লেষণ",

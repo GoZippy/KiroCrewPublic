@@ -9037,6 +9037,8 @@
         "menu_artifacts_desc": "सत्र के भीतर के दस्तावेज़ और स्टार",
         "menu_browser": "ब्राउज़र",
         "menu_browser_desc": "कोई वेब पेज या स्थानीय डेव सर्वर देखें",
+        "menu_terminal": "टर्मिनल",
+        "menu_terminal_desc": "गेटवे होस्ट पर शेल, केवल इस चैट के लिए",
         "menu_changes": "बदलाव",
         "menu_changes_desc": "पुल रिक्वेस्ट, जाँच और समीक्षाएँ",
         "menu_context": "संदर्भ विश्लेषण",

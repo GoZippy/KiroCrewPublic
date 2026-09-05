@@ -9162,6 +9162,8 @@
         "menu_artifacts_desc": "Documents et favoris de la session",
         "menu_browser": "Navigateur",
         "menu_browser_desc": "Afficher une page web ou un serveur de développement local",
+        "menu_terminal": "Terminal",
+        "menu_terminal_desc": "Shell sur l’hôte de la passerelle, limité à cette conversation",
         "menu_changes": "Modifications",
         "menu_changes_desc": "Pull requests, vérifications et revues",
         "menu_context": "Répartition du contexte",
