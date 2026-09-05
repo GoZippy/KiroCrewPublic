@@ -40,7 +40,7 @@ import { setArtifactEditing } from '../utils/artifactEditGuard'
 import { consumeJustCreatedBlank } from '../lib/blankHandoff'
 import { hasPendingArtifactWrite } from '../lib/artifactWrites'
 import { USER_SELECTABLE_KINDS } from '../lib/artifactKinds'
-import { PublishHub } from '../components/PublishHub'
+import { PublishHub, publishNoticeKey } from '../components/PublishHub'
 import type { Artifact, ArtifactEvent, ArtifactComment, CommentAnchor, ChatSlot } from '../types'
 
 import { i18nT } from '../i18n/t'
@@ -505,6 +505,30 @@ export default function ArtifactDetailPage({ popout = false }: { popout?: boolea
       // versions or events queries.
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err))
+    }
+  }, [artifact, queryClient, slug])
+
+  const [reprobing, setReprobing] = useState(false)
+  const [reprobeError, setReprobeError] = useState<string | null>(null)
+  /** Re-check the destination behind a publish notice, and clear it if it no longer holds. */
+  const reprobeNotice = useCallback(async () => {
+    if (!artifact) return
+    setReprobeError(null)
+    setReprobing(true)
+    try {
+      await api.reprobeArtifactNotice(artifact.slug)
+      // The record may now carry no notice at all, so the banner's own condition has
+      // to be re-evaluated from fresh data -- and the library indicators read the same
+      // fields, so they are invalidated too.
+      await queryClient.invalidateQueries({ queryKey: ['artifact', slug] })
+      await queryClient.invalidateQueries({ queryKey: ['artifacts'] })
+    } catch (err) {
+      // A reprobe failure is NOT a save failure. Routing it to `setSaveError` put it in
+      // the editor's save channel, whose surrounding copy tells the user their edit did
+      // not persist -- untrue, and it sends them to re-save content nothing touched.
+      setReprobeError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setReprobing(false)
     }
   }, [artifact, queryClient, slug])
 
@@ -1861,6 +1885,47 @@ export default function ArtifactDetailPage({ popout = false }: { popout?: boolea
           <div className="mb-3 flex items-start gap-2 px-3 py-2 rounded-md border border-danger/40 bg-danger-subtle text-[13px] text-danger">
             <AlertCircle size={14} className="lucide-inline shrink-0 mt-0.5" />
             <span><strong>{i18nT('pages.artifactDetailPage.publication_sync_issue')}</strong> {artifact.publication.last_error}</span>
+          </div>
+        )}
+
+        {/* Notice-only publication: the publish SUCCEEDED and the link is valid,
+            it just is not reachable yet (e.g. CloudFront still rolling out). That
+            is not a failure, so it renders as a neutral/warn line -- never the
+            danger surface `last_error` drives. Suppressed when a real error is
+            present, since that is the more important thing to show. */}
+        {artifact.publication?.notice && !artifact.publication.last_error && (
+          <div className="mb-3 flex items-start gap-2 px-3 py-2 rounded-md border border-warn/30 bg-warn-subtle text-[13px] text-warn">
+            <AlertTriangle className="lucide-inline shrink-0 mt-0.5" />
+            <span className="min-w-0 flex-1">{i18nT(publishNoticeKey({
+              rolling_out: 'pages.artifactDetailPage.publication_still_rolling_out',
+              distribution_disabled: 'pages.artifactDetailPage.publication_distribution_disabled',
+              notice_generic: 'pages.artifactDetailPage.publication_notice_generic',
+            }, artifact.publication.notice_code))}</span>
+            {/* A notice is recorded once, at publish time, and the ordinary happy path
+                never revisits it -- so a link that HAS since finished rolling out kept
+                this banner forever. This asks the destination again and clears the notice
+                only when the condition really cleared. User-triggered rather than polled:
+                the answer costs a call to the destination, and a timer would either clear
+                it without checking or hammer the destination on every visit. */}
+            <Btn
+              onClick={reprobeNotice}
+              disabled={reprobing}
+              aria-label={i18nT('pages.artifactDetailPage.recheck_publication_notice')}
+            >
+              {reprobing
+                ? i18nT('pages.artifactDetailPage.rechecking')
+                : i18nT('pages.artifactDetailPage.check_again')}
+            </Btn>
+            {/* Rendered here, beside the button that triggered it: a re-check failure used
+                to be written to the editor's save-error channel, which both mislabelled it
+                and put it far from the control the user just pressed.
+                No hand-off: this panel sits on the artifact detail page alongside an
+                editable buffer, and `askAgent` navigates away and destroys unsaved edits.
+                A failed re-check is retryable in place by pressing the button again, so the
+                hand-off would cost more than it could recover. */}
+            {reprobeError && (
+              <ErrorNotice message={reprobeError} className="mt-2" />
+            )}
           </div>
         )}
 

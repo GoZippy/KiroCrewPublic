@@ -6685,6 +6685,7 @@
       "cancel": "रद्द करें",
       "do_not_publish_anything": "ऐसा कुछ भी प्रकाशित न करें जिसे आप खुले इंटरनेट पर नहीं रखेंगे।",
       "exposure_window_persistent": "जब तक आप डिप्लॉयमेंट वापस नहीं लेते या नष्ट नहीं करते, यह लिंक सार्वजनिक रहेगा।",
+      "exposure_window_persistent_withdrawable": "जब तक प्रकाशित प्रतिलिपि वापस नहीं ली जाती, यह लिंक सार्वजनिक रहेगा। आर्टिफ़ैक्ट मिटाने पर उसे वापस लेने का अनुरोध होता है।",
       "exposure_window_ttl_one": "यह लिंक {{count}} घंटे तक सार्वजनिक रहेगा, फिर स्वतः हट जाएगा।",
       "exposure_window_ttl_other": "यह लिंक {{count}} घंटे तक सार्वजनिक रहेगा, फिर स्वतः हट जाएगा।",
       "publishing": "प्रकाशित किया जा रहा है…",
@@ -6702,6 +6703,8 @@
       "kb": "KB",
       "no_publish_providers_available_for_this_artifact": "इस आर्टिफ़ैक्ट प्रकार के लिए कोई प्रकाशन प्रोवाइडर उपलब्ध नहीं है।",
       "override_publish_anyway": "ओवरराइड करें और फिर भी पब्लिश करें",
+      "published_still_rolling_out": "अभी रोलआउट हो रहा है — कुछ मिनटों में पहुँच योग्य।",
+      "open_artifact_deploy": "एक AWS प्रोफ़ाइल रजिस्टर करें",
       "publish": "प्रकाशित करें",
       "publish_failed": "पब्लिश विफल",
       "published": "प्रकाशित हो गया!",
@@ -6716,7 +6719,9 @@
       "ttl_time_to_live": "TTL (जीवनकाल)",
       "unexpected_response": "अनपेक्षित प्रतिक्रिया",
       "via": "माध्यम से:",
-      "public_exposure_warning": "प्रकाशित लिंक वाला कोई भी व्यक्ति यह सामग्री देख सकता है। यह सार्वजनिक इंटरनेट पर बिना किसी प्रमाणीकरण के परोसी जाती है।"
+      "public_exposure_warning": "प्रकाशित लिंक वाला कोई भी व्यक्ति यह सामग्री देख सकता है। यह सार्वजनिक इंटरनेट पर बिना किसी प्रमाणीकरण के परोसी जाती है।",
+      "published_distribution_disabled": "इस लिंक का डिलीवरी नेटवर्क निष्क्रिय है, इसलिए लिंक रिज़ॉल्व नहीं होगा। AWS कंसोल में डिस्ट्रिब्यूशन फिर से सक्रिय करें।",
+      "published_notice_generic": "यह लिंक अभी काम न कर सकता है।"
     },
     "pullRequestPanel": {
       "a_reviewer": "एक समीक्षक",
@@ -8495,6 +8500,7 @@
       "published_artifact": "प्रकाशित आर्टिफ़ैक्ट",
       "publishing": "प्रकाशित हो रहा है…",
       "pull_failed": "पुल विफल",
+      "publication_still_rolling_out": "अभी रोलआउट हो रहा है — यह लिंक कुछ मिनटों में पहुँच योग्य होगा।",
       "pull_latest": "नवीनतम लाएँ",
       "pull_the_latest_remote_content_as_a_new_local_ve": "नवीनतम रिमोट सामग्री को एक नए स्थानीय संस्करण के रूप में लाएँ (आपके संपादन सुरक्षित रहते हैं)",
       "push_your_local_version_up_as_the_remote_s_new_v": "पहले रिमोट की सामग्री लाए बिना ही अपने स्थानीय संस्करण को रिमोट के नए संस्करण के रूप में भेजें। रिमोट का नया संस्करण उसके इतिहास में बना रहता है, लेकिन अधिक्रमित हो जाता है।",
@@ -8537,7 +8543,12 @@
       "version": "संस्करण",
       "via_dashboard": "डैशबोर्ड के माध्यम से",
       "view_remote": "रिमोट देखें",
-      "your_current_edits_are_saved_as_a_version_first": "आपके वर्तमान संपादन पहले एक संस्करण के रूप में सहेजे जाते हैं, इसलिए कुछ भी नहीं खोता।"
+      "your_current_edits_are_saved_as_a_version_first": "आपके वर्तमान संपादन पहले एक संस्करण के रूप में सहेजे जाते हैं, इसलिए कुछ भी नहीं खोता।",
+      "publication_distribution_disabled": "इस लिंक का डिलीवरी नेटवर्क निष्क्रिय है, इसलिए लिंक रिज़ॉल्व नहीं होगा। AWS कंसोल में डिस्ट्रिब्यूशन फिर से सक्रिय करें।",
+      "publication_notice_generic": "यह लिंक अभी काम न कर सकता है।",
+      "check_again": "फिर जाँचें",
+      "rechecking": "जाँच हो रही है…",
+      "recheck_publication_notice": "इस प्रकाशन की स्थिति फिर जाँचें"
     },
     "artifactPopoutFrame": {
       "artifact": "आर्टिफ़ैक्ट",
@@ -8619,6 +8630,7 @@
       "promote_slug_taken_open_older": "पुराना “{{taken}}” खोलें",
       "published": "प्रकाशित ({{visibility}})",
       "published_sync_issue": "प्रकाशित (सिंक समस्या)",
+      "published_rolling_out": "प्रकाशित — अभी रोलआउट हो रहा है",
       "remove_artifact_confirm": "आर्टिफ़ैक्ट “{{slug}}” को अपनी लाइब्रेरी से हटाएँ?\n\nइससे आर्टिफ़ैक्ट की एंट्री और उसका वर्शन इतिहास मिट जाएगा। अगर यह आर्टिफ़ैक्ट डिस्क की किसी फ़ाइल या चैट विजेट से आया था, तो मूल को छुआ नहीं जाएगा — इसे बाद में फिर से जोड़ा जा सकता है।",
       "remove_from_artifacts_library": "आर्टिफ़ैक्ट लाइब्रेरी से निकालें",
       "remove_from_library": "लाइब्रेरी से निकालें",
@@ -8648,7 +8660,9 @@
       "widgets_files_and_snippets_live_tracked_with_ver": "विजेट, फ़ाइलें और स्निपेट — संस्करण इतिहास के साथ लाइव-ट्रैक किए गए",
       "your_artifacts": "आपके आर्टिफ़ैक्ट",
       "local_preview": "Local preview",
-      "more_actions": "और कार्रवाइयां"
+      "more_actions": "और कार्रवाइयां",
+      "published_distribution_disabled": "प्रकाशित — डिलीवरी नेटवर्क निष्क्रिय",
+      "published_notice_generic": "प्रकाशित — लिंक अभी काम न कर सकता है"
     },
     "capabilitiesPage": {
       "agent_capabilities": "एजेंट क्षमताएँ",

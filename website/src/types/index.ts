@@ -1290,6 +1290,18 @@ export interface ArtifactPublication {
   published_by: string
   /** Conflict / sync-failure message surfaced to the UI; empty when healthy. */
   last_error: string
+  /** Publish SUCCEEDED but the link is not usable yet (e.g. CloudFront still
+   *  rolling out). NOT an error — rendered as a neutral/warn line beside the
+   *  link, never in the danger surface `last_error` drives. Empty when the link
+   *  is already reachable. */
+  notice: string
+  /** Machine discriminator for `notice`, so the UI can pick the right copy
+   *  instead of assuming every notice is "still rolling out". One of
+   *  `"rolling_out"` | `"distribution_disabled"` | `"unknown"`, or empty when
+   *  there is no notice. The frontend selects its string from this and falls
+   *  back to a generic (no time promise) line for an unrecognised value.
+   *  Optional so an older gateway that omits it reads as "". */
+  notice_code?: string
 }
 
 /** A publishing provider's self-described capabilities for a given artifact kind,
@@ -1303,6 +1315,10 @@ export interface PublishProviderDescriptor {
   /** False => tooling not installed yet; installs automatically on first publish.
    *  Optional: older gateways omit it (treat as available). */
   available?: boolean
+  /** The provider's own remedy text for `available: false` -- which action makes it
+   *  available. Optional: older gateways omit it, and a row with no hint simply shows
+   *  none rather than inventing one. */
+  install_hint?: string
   sharing_model: {
     supports_private: boolean
     supports_shared: boolean

@@ -87,6 +87,7 @@ from kiro_crew.dashboard.handlers.artifacts import (
     api_artifact_relocate,
     api_artifact_reopen_comment,
     api_artifact_reply_comment,
+    api_artifact_reprobe_notice,
     api_artifact_resolve_comment,
     api_artifact_session_docs,
     api_artifact_set_folder,
@@ -1582,6 +1583,7 @@ def _register_mcp_routes(app: web.Application) -> None:
     app.router.add_post("/api/artifacts/{slug}/publish", api_artifact_publish)
     app.router.add_delete("/api/artifacts/{slug}/publish", api_artifact_unpublish)
     app.router.add_post("/api/artifacts/{slug}/publish/refresh", api_artifact_refresh_sharing)
+    app.router.add_post("/api/artifacts/{slug}/publish/reprobe-notice", api_artifact_reprobe_notice)
     app.router.add_patch("/api/artifacts/{slug}/sharing", api_artifact_update_sharing)
     app.router.add_patch("/api/artifacts/{slug}/relocate", api_artifact_relocate)
     # Upstream sync (fork/publication lineage) — pull / status / overwrite
