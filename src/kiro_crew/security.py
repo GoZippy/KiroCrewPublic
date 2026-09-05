@@ -6148,19 +6148,22 @@ def _iter_shell_chars(text: str, state: int = 0, ansi: bool = False) -> "Iterato
     inside double quotes, and inside ``$'...'``, but is LITERAL inside a plain
     single quote; an escaped quote is data and closes nothing. The ``$'``
     lookback is within-text, which is correct because whitespace cannot sit
-    between the ``$`` and its quote. It can misread ``$$'`` (PID expansion) as
-    ANSI-C, and that direction only ever OVER-flags: a plain-single reading
-    closes at every quote the ANSI reading skips, so a walk can end "still open"
-    where bash closed, never the reverse.
+    between the ``$`` and its quote, and it is EXACT: only a literal, unpaired
+    ``$`` (an odd run -- ``$$`` is the PID parameter, ``\\$`` is data) opens
+    ANSI-C. That exactness is load-bearing now that the segment split and the
+    program anchor read this state in the allow direction: a walk that ends
+    "still open" where bash closed hides a separator or a ``git`` word.
 
     *state* and *ansi* resume a walk, which is what lets a quoted word spanning
     whitespace be read without desyncing.
     """
     i = 0
     n = len(text)
+    dollar_run = 0  # consecutive LITERAL ``$`` immediately before this char
     while i < n:
         ch = text[i]
         if ch == "\\" and (state != 1 or ansi):
+            dollar_run = 0  # an escaped ``$`` is data and introduces nothing
             if i + 1 >= n:
                 yield _ShellChar(i, ch, ch, False, state, ansi, True)
                 return
@@ -6171,7 +6174,16 @@ def _iter_shell_chars(text: str, state: int = 0, ansi: bool = False) -> "Iterato
         if state == 0:
             if ch == "'":
                 state = 1
-                ansi = i > 0 and text[i - 1] == "$"
+                # ``$'`` opens an ANSI-C string only when the ``$`` is itself
+                # literal and unpaired: an escaped ``\$`` is data, and in a run
+                # of dollars the shell pairs them off (``$$`` is the PID
+                # parameter), so only an ODD run leaves a ``$`` to introduce the
+                # quote. The plain ``text[i - 1] == "$"`` lookback read
+                # ``\$'foo\'`` as ANSI-C, kept the quote open across a ``;``, and
+                # hid the publish behind it -- with the segment split and the
+                # program anchor now reading this state, a false "still open" is
+                # an ALLOW-direction error, not a mere over-flag.
+                ansi = dollar_run % 2 == 1
             elif ch == '"':
                 state = 2
         elif state == 1:
@@ -6179,6 +6191,7 @@ def _iter_shell_chars(text: str, state: int = 0, ansi: bool = False) -> "Iterato
                 state = 0
         elif ch == '"':
             state = 0
+        dollar_run = dollar_run + 1 if was_unquoted and ch == "$" else 0
         yield _ShellChar(i, ch, ch, was_unquoted, state, ansi, False)
         i += 1
 
@@ -6789,6 +6802,16 @@ def _git_push_args(segment: str) -> list[str] | None:
                 args.append(raw_args[k])
                 k += 1
                 continue
+            if not consumes_next and "(" in raw_args[k]:
+                # A redirection whose ATTACHED target opens a paren
+                # (``2>(cat ... )``): not the bare process-substitution word
+                # (that is caught above) and not a file target -- the parens
+                # span later words, and skipping this one as a self-contained
+                # redirection left the body's remainder (``>/dev/null # fake
+                # )``) to be read as argv, where the ``#`` truncated the real
+                # refspecs (GPT 5.6 review on #8719). Whatever bash makes of
+                # the spelling, this gate cannot read it: fail CLOSED.
+                return None
             k += 1
             if not consumes_next or k >= len(raw_args):
                 continue
@@ -6820,11 +6843,31 @@ def _git_push_args(segment: str) -> list[str] | None:
             # sentinel: the same posture the whole-segment expansion regex gave
             # process substitution before it moved to this walk. A PROVEN
             # boundary is a word; an UNPROVABLE one is ambiguous.
+            #
+            # PROVEN is also refused for a body word the quote walk cannot READ
+            # (``_process_substitution_word_is_opaque``): the paren count models
+            # quoting, and nothing else -- so a construct outside quoting moves
+            # the real closer or hides the program without the count noticing. A
+            # word-initial ``#`` comments out the ``)`` after it (``>(cat
+            # >/dev/null # fake )`` + newline + ``) main`` pushed main); a
+            # reserved word makes the body a compound command whose ``)`` is
+            # SYNTAX (``>(case x in x) git push;; esac)`` ran the bare push); an
+            # unquoted glob or expansion in a body word means the program the
+            # payload walk judges the skipped body by resolves only at run time
+            # (``>(/usr/bin/g?t push origin main)`` closed cleanly and the walk
+            # saw no ``git``). Each was one GPT 5.6 round on #8719, and modelling
+            # them one at a time is unbounded, so the rule is the class: a body
+            # word the walk cannot read is not a redirection the gate may skip.
             depth = 0
             state = 0
             ansi = False
             proven = False
+            opener = k
             while k < len(raw_args):
+                if _process_substitution_word_is_opaque(
+                    raw_args[k], state, ansi, first=k == opener
+                ):
+                    return None
                 walk = _shell_quote_walk(raw_args[k], state=state, ansi=ansi)
                 depth += walk.paren_delta
                 state, ansi = walk.end_state, walk.end_ansi
@@ -6836,6 +6879,98 @@ def _git_push_args(segment: str) -> list[str] | None:
                 return None
         return args
     return None
+
+
+#: bash reserved words. Any of them as an UNQUOTED word inside a
+#: process-substitution body means the body is a compound command whose ``)``
+#: may be SYNTAX (``case x in x)``) rather than the closer.
+_SHELL_RESERVED_WORDS = frozenset(
+    {
+        "!",
+        "[[",
+        "]]",
+        "case",
+        "coproc",
+        "do",
+        "done",
+        "elif",
+        "else",
+        "esac",
+        "fi",
+        "for",
+        "function",
+        "if",
+        "in",
+        "select",
+        "then",
+        "time",
+        "until",
+        "while",
+        "{",
+        "}",
+    }
+)
+
+#: The characters an UNQUOTED process-substitution body word may consist of and
+#: still be one the redirect skip may step over: the alphabet of an ordinary
+#: program invocation -- letters, digits, and ``/ - _ . = :`` (paths, flags,
+#: ``KEY=value``, ``host:port``). Everything else is refused as OPAQUE. This is
+#: an ALLOWLIST on purpose: the earlier denylist (``*?[``, then extglob ``(``,
+#: then ``#``, then ``& ; |``) grew by one shell metacharacter per review round
+#: on #8719, and an enumeration of what bash can do with a character is never
+#: finished. Quoted text is not judged here at all -- #8712's quote walk owns
+#: it -- and ``$'`` (the ANSI-C quote that walk models) is the one active ``$``
+#: admitted, so ``> >(echo '(' ) main`` and ``> >(echo $'a\'b') main`` keep
+#: their precise reading while a glob, an extglob or nested paren, a comment, a
+#: control operator, a tilde, a history ``!``, a brace or an expansion in a
+#: body word all fail closed: with such a word the shell either moves the real
+#: closer or resolves the program only at run time, and either way the payload
+#: walk that judges the skipped body cannot see what bash runs.
+_PROCESS_SUBSTITUTION_SAFE_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/-_.=:"
+)
+
+
+def _process_substitution_word_is_opaque(word: str, state: int, ansi: bool, *, first: bool) -> bool:
+    """True when *word*, read from quote state ``(state, ansi)`` inside a
+    process-substitution body, is NOT plainly readable: an unquoted reserved
+    word, or any unquoted character outside
+    :data:`_PROCESS_SUBSTITUTION_SAFE_CHARS` other than the ``$`` of an ANSI-C
+    ``$'...'`` and a ``)`` that ends the word (the construct's closer, which
+    the caller's depth walk accounts for). *first* marks the opener word, whose
+    text up to and including the ``(`` is the ``>(`` / ``2>(`` opener rather
+    than body.
+    """
+    body = word[word.index("(") + 1 :] if first else word
+    if state == 0 and body.rstrip(")") in _SHELL_RESERVED_WORDS:
+        return True
+    steps = list(_iter_shell_chars(body, state, ansi))
+    for index, step in enumerate(steps):
+        if not step.active and step.state == 0 and step.text.startswith("\\"):
+            # An UNQUOTED escape pair: ``\g\i\t`` reaches the program as
+            # ``git`` while no scanner word spells it (GPT 5.6 review on
+            # #8719). Inside quotes the walk owns the backslash; outside them
+            # it is a spelling the allowlist must not see through.
+            return True
+        if not step.active and step.state == 2 and step.text == step.char and step.char in "$`":
+            # Double quotes do NOT suspend expansion: ``"$GIT" push origin
+            # main`` runs whatever ``$GIT`` names (GPT 5.6 review on #8719).
+            # An unescaped ``$`` or backtick inside double quotes is an
+            # expansion the scan cannot resolve, so the word is opaque; an
+            # escaped ``\$`` (text ``\$``) stays data.
+            return True
+        if not step.active or step.char in _PROCESS_SUBSTITUTION_SAFE_CHARS:
+            continue
+        if step.char in "'\"":
+            continue  # a quote DELIMITER: the quote walk owns what it encloses
+        if step.char == ")" and index == len(steps) - 1:
+            continue  # the closer, accounted for by the caller's depth walk
+        if step.char == "$":
+            following = steps[index + 1] if index + 1 < len(steps) else None
+            if following is not None and following.char == "'" and following.ansi:
+                continue  # ``$'...'`` -- the ANSI-C quote, modelled by the walk
+        return True
+    return False
 
 
 def _normalize_ref(ref: str) -> str:
