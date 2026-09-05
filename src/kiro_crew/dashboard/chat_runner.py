@@ -117,6 +117,7 @@ from kiro_crew.dashboard.handlers import (
     _find_prompt,
     _get_skills,
     _list_aim_prompts,
+    _prompt_read_within_root,
 )
 from kiro_crew.dashboard.handlers.usage import (
     persist_token_record_async,
@@ -185,9 +186,11 @@ from kiro_crew.hooks import (
     TOOL_ALLOW,
     TOOL_AUTO_APPROVE,
     TOOL_DENY,
+    FileTooLargeError,
     ToolHookResult,
     fire_tool_hooks,
     safe_read_file,
+    safe_read_file_bytes_nolink,
     validate_file_path,
 )
 from kiro_crew.image_artifacts import register_images_off_loop
@@ -3376,20 +3379,32 @@ def _strip_yaml_frontmatter(content: str) -> str:
     return content
 
 
-def _expand_prompt_mention(
+def _resolve_prompt_mention(
     message: str,
-    state: DashboardState,
-    slot: _ChatSlot,
-) -> tuple[str, str]:
-    """Expand ``@prompt-name rest`` into SOP content + user instructions.
+    project_dir: Path | None,
+) -> tuple[str, str, str]:
+    """Resolve and READ ``@prompt-name rest``, touching no shared state.
 
-    Returns ``(expanded_message, "ok")`` if a prompt was resolved,
-    ``(original_message, "blocked")`` if blocked by sensitive-path check,
-    ``(original_message, "too_large")`` if file exceeds size limit, or
-    ``(original_message, "not_found")`` if no match.
+    Returns ``(expanded_message, "ok", chip)`` if a prompt was resolved,
+    ``(original_message, "blocked", "")`` if blocked by sensitive-path check,
+    ``(original_message, "too_large", "")`` if file exceeds size limit, or
+    ``(original_message, "not_found", "")`` if no match. *chip* is the
+    user-visible "Loaded prompt" line the caller is expected to surface, empty
+    unless the status is ``ok``.
+
+    Returning the chip rather than appending it is what makes this function safe
+    to run in ``asyncio.to_thread``: ``slot.append`` sets an ``asyncio.Event``,
+    whose ``set()`` resolves loop-owned futures through the loop's
+    non-thread-safe ``call_soon``, and ``push_slots_update`` broadcasts. Neither
+    belongs on a worker thread, so the split is by which THREAD may do the work
+    rather than by taste: everything here is filesystem and CPU work over a
+    caller-supplied path, and it can see neither the slot nor the state. Its two
+    callers — :func:`_expand_prompt_mention` on the loop's own thread and
+    :func:`_expand_prompt_mention_off_loop` from a worker — surface the chip
+    themselves, both on the loop.
     """
     if not message.startswith("@"):
-        return message, "not_found"
+        return message, "not_found", ""
 
     # Parse @name from start of message — name ends at first whitespace or EOL
     body = message[1:]  # strip leading @
@@ -3398,27 +3413,68 @@ def _expand_prompt_mention(
     user_text = parts[1].strip() if len(parts) > 1 else ""
 
     try:
-        match = _find_prompt(mention)
+        match = _find_prompt(mention, project_dir)
     except Exception:
-        return message, "not_found"
+        return message, "not_found", ""
     if not match:
-        return message, "not_found"
+        return message, "not_found", ""
 
     if is_sensitive_path(match["path"]):
-        return message, "blocked"
+        return message, "blocked", ""
 
+    # Read the path the resolver CANONICALIZED, and re-check it there. The check
+    # above tests the name as addressed, which for a link is not the file a read
+    # by that name would return — so a project shipping
+    # ``.kiro/prompts/creds.md -> ~/.aws/credentials`` would pass a check on the
+    # link and have its target injected into the turn.
+    resolved = validate_file_path(match["path"])
+    if resolved is None:
+        return message, "blocked", ""
+
+    # Read through the same hardlink-rejecting gate as the scoped HTTP read
+    # rather than by name: validating a path and then opening that name leaves a
+    # window in which the final component is swapped for a link, so the bytes
+    # injected into the turn are not the bytes any check ran against. The gate
+    # opens FIRST with ``O_NOFOLLOW`` and validates the descriptor it actually
+    # read — a leaf swapped for a symlink cannot be opened at all, and
+    # ``st_nlink > 1`` or a non-regular inode is refused — so the inode checked
+    # is the inode injected. Every entry reaching here was minted by the listing
+    # gate, which refuses a link outright, so this closes the swap window rather
+    # than a standing hole.
+    #
+    # ``within_root`` comes from the shared `_prompt_read_within_root`, which both
+    # HTTP detail branches also use — the root that pins an entry is a property of
+    # the entry, so deriving it per reader is how two readers of one directory come
+    # to disagree. For a user-scope entry it re-runs that scope's own root gate, so
+    # the read confines itself to a root something has checked since the entry was
+    # minted rather than to one assembled here; ``None`` there means the root is no
+    # longer serveable and the read is REFUSED rather than pinned inside the
+    # directory a swap named. See that function for the residual window that a
+    # path-based ``within_root`` cannot close, and for why a package SOP gets the
+    # canonical path's own parent instead.
+    read_root = _prompt_read_within_root(match, project_dir, resolved)
+    if read_root is None:
+        return message, "not_found", ""
     try:
-        raw = Path(match["path"]).read_bytes()
-    except OSError:
-        return message, "not_found"
-    if len(raw) > MAX_PROMPT_BYTES:
+        raw = safe_read_file_bytes_nolink(
+            resolved,
+            within_root=read_root,
+            max_bytes=MAX_PROMPT_BYTES,
+        )
+    except FileTooLargeError:
         logger.warning(
-            "Prompt %s exceeds max size (%d > %d bytes)",
+            "Prompt %s exceeds max size (%d bytes)",
             mention,
-            len(raw),
             MAX_PROMPT_BYTES,
         )
-        return message, "too_large"
+        return message, "too_large", ""
+    if raw is None:
+        # The gate refuses and reads through one descriptor, so it cannot say
+        # which of the two happened — and both are a prompt this turn does not
+        # get. Reported as the miss the plain read already reported for an
+        # unreadable file, so a refusal reveals nothing a link's target could be
+        # probed with.
+        return message, "not_found", ""
     content = raw.decode("utf-8", errors="replace")
     # Strip display-metadata frontmatter BEFORE redaction and the char count,
     # so both the redaction pass and the user-visible "Loaded prompt … chars"
@@ -3433,15 +3489,89 @@ def _expand_prompt_mention(
     if user_text:
         expanded += f"\n\n---\nAdditional context from user: {user_text}"
 
-    # Show the user what happened
-    slot.append(
-        "system",
-        f"📜 Loaded prompt **@{match['fullName']}** ({len(content):,} chars)",
-        "msg msg-info",
-    )
+    # Show the user what happened — handed back for the caller to surface on the
+    # loop, since this may be running on a worker thread.
+    return expanded, "ok", f"📜 Loaded prompt **@{match['fullName']}** ({len(content):,} chars)"
+
+
+def _slot_prompt_project(slot: _ChatSlot) -> Path | None:
+    """The project *slot*'s ``local`` prompts resolve against, or ``None``.
+
+    Read on the loop by both entry points below and passed into the resolver, so
+    the on-loop and off-loop expansions can never drift on where "local" is for a
+    given chat — the property the HTTP prompt surface is documented to match.
+    """
+    return Path(slot.project) if slot.project else None
+
+
+def _surface_prompt_chip(state: DashboardState, slot: _ChatSlot, chip: str) -> None:
+    """Append *chip* to the slot and broadcast, on the event loop's own thread.
+
+    Both sinks are loop-owned: ``slot.append`` ends in ``slot.event.set()``, an
+    ``asyncio.Event`` whose waiters are resolved through the loop's
+    ``call_soon`` — not its threadsafe variant — so a foreign-thread caller
+    queues a callback the loop is never woken for, and raises outright under
+    ``asyncio`` debug mode. Every caller therefore runs this after its own
+    ``await``, never inside the worker.
+    """
+    if not chip:
+        return
+    slot.append("system", chip, "msg msg-info")
     state.push_slots_update()
 
-    return expanded, "ok"
+
+def _expand_prompt_mention(
+    message: str,
+    state: DashboardState,
+    slot: _ChatSlot,
+) -> tuple[str, str]:
+    """Expand ``@prompt-name rest`` into SOP content + user instructions.
+
+    Returns ``(expanded_message, "ok")`` if a prompt was resolved,
+    ``(original_message, "blocked")`` if blocked by sensitive-path check,
+    ``(original_message, "too_large")`` if file exceeds size limit, or
+    ``(original_message, "not_found")`` if no match.
+
+    Local prompts resolve against THIS chat slot's project (per-slot), the same
+    directory the slot's agent runs in, so an ``@mention`` of a local prompt
+    matches the caller's checkout rather than a gateway-global dir. A slot with
+    no project resolves to ``None`` -> local prompts simply are not matched
+    (fail-closed), the same as when there is no gateway project. It reads
+    ``slot.project`` directly (this slot, no cross-slot fallback) — the SAME
+    question the HTTP prompt surface asks via ``requesting_slot_project`` — so
+    the chat and HTTP surfaces agree on where "local" is for a given chat.
+
+    This is the ON-LOOP entry point, kept for callers that are already on a
+    thread allowed to touch the slot. A coroutine must use
+    :func:`_expand_prompt_mention_off_loop` instead: the resolve-and-read half
+    is filesystem work under a directory the gateway does not own.
+    """
+    expanded, status, chip = _resolve_prompt_mention(message, _slot_prompt_project(slot))
+    _surface_prompt_chip(state, slot, chip)
+    return expanded, status
+
+
+async def _expand_prompt_mention_off_loop(
+    message: str,
+    state: DashboardState,
+    slot: _ChatSlot,
+) -> tuple[str, str]:
+    """:func:`_expand_prompt_mention` with the filesystem half on a worker thread.
+
+    The resolve-and-read half walks the prompt roots and reads the matched file;
+    the project's ``.kiro/prompts`` is not the gateway's own directory, may be
+    network-backed, and its local half is uncacheable, so on the loop one
+    ``@mention`` on slow storage stalls every other request and the heartbeat
+    with it. Only that half is offloaded — the chip append is a loop-owned
+    mutation (see :func:`_surface_prompt_chip`) and runs here, after the
+    ``await``, which is also what keeps it ordered ahead of whatever the caller
+    appends next.
+    """
+    expanded, status, chip = await asyncio.to_thread(
+        _resolve_prompt_mention, message, _slot_prompt_project(slot)
+    )
+    _surface_prompt_chip(state, slot, chip)
+    return expanded, status
 
 
 def _expand_dollar_skills(
@@ -5884,7 +6014,8 @@ async def _run_chat(
         if sub == "get" and len(args) > 2:
             # /prompts get <name> — invoke the prompt in this chat
             name = args[2]
-            expanded, status = _expand_prompt_mention(f"@{name}", state, slot)
+            # Off the loop for the same reason as the @mention path below.
+            expanded, status = await _expand_prompt_mention_off_loop(f"@{name}", state, slot)
             if status == "ok":
                 sel().log_tool_invocation(
                     session_key="",
@@ -5955,7 +6086,10 @@ async def _run_chat(
             # _list_aim_prompts walks the (possibly large or edition-supplied)
             # prompt_source_roots() with rglob + file reads; keep it off the
             # event loop so a slow/network-backed root can't stall the gateway.
-            prompts = await asyncio.to_thread(_list_aim_prompts)
+            # Pass THIS slot's project so its local prompts are listed per-slot
+            # (fail-closed to global-only when the slot has no project).
+            project_dir = Path(slot.project) if slot.project else None
+            prompts = await asyncio.to_thread(_list_aim_prompts, project_dir)
         except Exception:
             prompts = []
         if not prompts:
@@ -6446,7 +6580,13 @@ async def _run_chat(
         prompt_expanded = _is_quick_prompt
         if message.startswith("@") and not is_slash and _prompt_depth < 1:
             original = message
-            message, _status = _expand_prompt_mention(message, state, slot)
+            # Off the loop, for the same reason the `$skill` expansion below is:
+            # this resolves and READS files — the project's prompt directory is
+            # not the gateway's own and may be network-backed, and its local half
+            # is uncacheable, so it cannot be amortized away. `await` keeps the
+            # ordering identical to the inline call: nothing after this line runs
+            # until the expansion (and the chip it appends) is complete.
+            message, _status = await _expand_prompt_mention_off_loop(message, state, slot)
             if _status == "ok":
                 prompt_expanded = True
                 sel().log_tool_invocation(

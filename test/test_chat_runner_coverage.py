@@ -2785,7 +2785,7 @@ class TestRunChatLocalCommands:
         slot = _slot()
 
         with patch.object(
-            chat_runner, "_expand_prompt_mention", return_value=("@secret", "blocked")
+            chat_runner, "_resolve_prompt_mention", return_value=("@secret", "blocked", "")
         ):
             await _drive(state, slot, "/prompts get secret")
 
@@ -2798,7 +2798,7 @@ class TestRunChatLocalCommands:
         slot = _slot()
 
         with patch.object(
-            chat_runner, "_expand_prompt_mention", return_value=("@big", "too_large")
+            chat_runner, "_resolve_prompt_mention", return_value=("@big", "too_large", "")
         ):
             await _drive(state, slot, "/prompts get big")
 
@@ -2810,7 +2810,7 @@ class TestRunChatLocalCommands:
         slot = _slot()
 
         with patch.object(
-            chat_runner, "_expand_prompt_mention", return_value=("@nope", "not_found")
+            chat_runner, "_resolve_prompt_mention", return_value=("@nope", "not_found", "")
         ):
             await _drive(state, slot, "/prompts get nope")
 
