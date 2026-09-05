@@ -322,7 +322,7 @@ export default function WorkflowsRuns({ embedded = false }: { embedded?: boolean
                 className={`flex items-center gap-2 px-3 py-2 rounded border text-[12px] cursor-pointer ${
                   row.run_id === selectedId
                     ? 'border-accent bg-card'
-                    : 'border-border hover:bg-card'
+                    : 'border-border hover:bg-bg-hover'
                 }`}
                 onClick={() => select(row.run_id)}
                 role="button"

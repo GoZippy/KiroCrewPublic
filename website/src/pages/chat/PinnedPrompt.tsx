@@ -74,7 +74,10 @@ const MORPH_EASE = 'cubic-bezier(0.2,0,0,1)'
  * at the same place at the moment of hand-off, so the bubble appears to stop
  * travelling and stick rather than being replaced. A taller prompt hands over
  * once its bottom edge reaches the band's bottom (`pinHandoffY`), i.e. once it is
- * completely covered by the band, so the swap still happens out of sight. Keep
+ * completely covered by the band, so the swap still happens out of sight. The
+ * box also carries the bubble's `user-bubble` theme hook, so a theme that tints
+ * the bubble (kiro-light) tints the card identically and the swap stays
+ * invisible there too. Keep
  * these values in sync with `UserMessage`'s `bubble` and with `MD_COMPONENTS.p`
  * in MarkdownRenderer.
  *
@@ -287,7 +290,7 @@ export default function PinnedPrompt({
         className="pointer-events-auto max-w-[550px] min-w-0"
         style={{ willChange: 'transform' }}
       >
-        <div ref={boxRef} className="flex items-start gap-2 rounded-xl bg-card text-card-fg ring-1 ring-inset forced-colors:border ring-border shadow-sm px-4 py-2 text-sm">
+        <div ref={boxRef} className="user-bubble flex items-start gap-2 rounded-xl bg-card text-card-fg ring-1 ring-inset forced-colors:border ring-border shadow-sm px-4 py-2 text-sm">
           <button
             type="button"
             onClick={onJump}

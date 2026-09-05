@@ -50,6 +50,23 @@ and radii are injected as fixed defaults by `buildCustomThemeCss` (fonts are a
 pack-level L1 surface, not per-color-mode data), and the `--search-highlight*`
 trio is an internal find-in-page surface not exposed to theme packs.
 
+**A card must carry its own edge.** `--card` is not guaranteed to differ from
+`--bg`: in `kiro-light` both are `#ffffff`, because the canvas is white and the
+shell (nav rail, sessions list) steps back onto `--panel` instead. So a `bg-card`
+surface that sits directly on the page and has no `border`, `ring`, or `shadow`
+paints nothing visible there — it "works" in every other theme and ships invisible
+in that one, with no gate failing. The rule for a new component: a `bg-card` box on
+`--bg` gets a `border-border`, a `ring-1 ring-border`, or a `shadow-*`, the way the
+top-bar search field and the settings cards already do. The three surfaces that
+deliberately stay borderless (the user bubble, the two top-bar capsules) are
+handled by kiro-light-scoped hooks in `index.css`, and
+`src/test/kiroLightShellHooks.test.ts` pins that list; a new borderless card is a
+fourth hook there, not an unmarked exception. The inverse holds too: a `bg-bg`
+well nested inside a `bg-card` container is the same pair of values seen from the
+other side, so a code or output block that relies on the well being darker than its
+card gets the same `border-border` — and a `hover:bg-card` on a row that sits on
+the page is not a hover at all in this theme; hover states use `bg-bg-hover`.
+
 ## Adding a new color role
 
 When you genuinely need a new color role, add the variable to **both** sides in
