@@ -1,7 +1,12 @@
 /**
  * transcriptRenderers — the dashboard's row set for the shared chat transcript.
  *
- * The single-chat surface (ChatPage) draws its rows from a local role chain.
+ * The single-chat surface (ChatPage) dispatches through the same registry with
+ * its OWN host list (see `chatPageRenderers` in pages/ChatPage.tsx -- chat-core
+ * P5-a); the two dashboard host lists share ids (`tool`, `file`, `nudge`,
+ * `recovery_inject`, `thinking_block`, `error`, `workflow_completion`,
+ * `subagent_completion`) so they can converge by override, but they are still
+ * two lists until a P5 follow-up spreads this factory into ChatPage's.
  * Every OTHER dashboard surface draws through app-sdk/ChatMessageList, whose
  * default registry is deliberately store-free and therefore renders a WEAKER
  * transcript: a static pill instead of the live tool line, and nothing at all

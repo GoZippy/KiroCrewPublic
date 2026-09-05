@@ -350,14 +350,18 @@ describe('ChatPage – recovery card wiring', () => {
   })
 
   it('checks for a card BEFORE the generic inject bubble renders', () => {
-    // The generic `isInject` branch paints any injected text as a full-width
-    // warning bubble. If the resolver check lands after it, the card is dead
-    // code and the raw prompt reappears.
-    const card = src.indexOf('resolveInjectCard(m)')
-    const generic = src.indexOf("const isInject = m.role === 'inject'")
-    expect(card).toBeGreaterThanOrEqual(0)
-    expect(generic).toBeGreaterThanOrEqual(0)
-    expect(card).toBeLessThan(generic)
+    // Since chat-core P5-a the page dispatches through the app-sdk registry
+    // and precedence is the order of its host entries. The generic bubble
+    // entry (which paints any injected text as a full-width warning bubble)
+    // is the LAST entry; the `inject_recovery` shape entry must sit before it,
+    // or the card is dead code and the raw prompt reappears.
+    const list = src.indexOf('const renderers = mergeRenderers([')
+    const card = src.indexOf("id: 'recovery_inject'", list)
+    const generic = src.indexOf('\n      bubble,\n    ])', list)
+    expect(list).toBeGreaterThanOrEqual(0)
+    expect(card).toBeGreaterThan(list)
+    expect(generic).toBeGreaterThan(card)
+    expect(src).toMatch(/id: 'recovery_inject',\s*\n\s*roles: \['inject'\],\s*\n\s*match: m => resolveInjectCard\(m\) != null/)
   })
 })
 
