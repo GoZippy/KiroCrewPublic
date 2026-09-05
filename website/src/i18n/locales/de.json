@@ -8972,10 +8972,7 @@
       "pinnedPrompt": {
         "collapse_pinned_prompt": "Angehefteten Zug einklappen",
         "expand_pinned_prompt": "Angehefteten Zug ausklappen",
-        "jump_to_this_turn": "Zu diesem Zug springen",
-        "minimize_pinned_prompt": "Angehefteten Zug minimieren",
-        "pinned_turn": "Angehefteter Zug",
-        "restore_pinned_prompt": "Angehefteten Zug wiederherstellen"
+        "jump_to_this_turn": "Zu diesem Zug springen"
       },
       "noticeCard": {
         "blocked": "Blockiert",

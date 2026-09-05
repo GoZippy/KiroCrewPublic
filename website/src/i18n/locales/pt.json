@@ -9096,10 +9096,7 @@
       "pinnedPrompt": {
         "collapse_pinned_prompt": "Recolher turno fixado",
         "expand_pinned_prompt": "Expandir turno fixado",
-        "jump_to_this_turn": "Ir para este turno",
-        "minimize_pinned_prompt": "Minimizar turno fixado",
-        "pinned_turn": "Turno fixado",
-        "restore_pinned_prompt": "Restaurar turno fixado"
+        "jump_to_this_turn": "Ir para este turno"
       },
       "noticeCard": {
         "blocked": "Bloqueado",
