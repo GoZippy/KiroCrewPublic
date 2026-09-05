@@ -221,7 +221,13 @@ def _aws(args: list[str], profile: str) -> list[str]:
     return cmd
 
 
-def run_aws(args: list[str], profile: str, timeout: int = 30) -> tuple[int, str, str]:
+def run_aws(
+    args: list[str],
+    profile: str,
+    timeout: int = 30,
+    *,
+    extra_visible_dirs: tuple[str, ...] = (),
+) -> tuple[int, str, str]:
     """Run an ``aws`` CLI command. Returns (returncode, stdout, stderr).
 
     Single subprocess chokepoint — unit tests monkeypatch this. Credentials are
@@ -233,8 +239,16 @@ def run_aws(args: list[str], profile: str, timeout: int = 30) -> tuple[int, str,
     must read ``~/.aws`` to resolve credentials; the argv is fixed (no shell, no
     user-controlled command structure — only ``--profile`` and validated args are
     appended), so ``standard`` is the correct tier (same as app subprocesses).
+
+    ``extra_visible_dirs`` re-exposes an agent-hidden tree to THIS spawn alone: a
+    transfer that must land in a directory every agent sandbox masks (so a
+    same-UID agent cannot swap the destination for a link) still needs the CLI
+    itself to see that directory. Naming it here lifts the mask for the one
+    fixed-argv child, never for the agent.
     """
-    sandboxed, cleanup = wrap_argv(_aws(args, profile), mode="standard")
+    sandboxed, cleanup = wrap_argv(
+        _aws(args, profile), mode="standard", extra_visible_dirs=extra_visible_dirs
+    )
     sandboxed = cgroup_scope_argv(sandboxed)  # cgroup DoS ceiling
     try:
         proc = run_limited(  # noqa: S603 — fixed argv, no shell, sandbox-wrapped
@@ -281,9 +295,24 @@ def _trimmed_stderr(err: str, limit: int = 200) -> str:
     return text[:limit]
 
 
-def _checked(args: list[str], profile: str, *, action: str, timeout: int = 30) -> str:
+def _checked(
+    args: list[str],
+    profile: str,
+    *,
+    action: str,
+    timeout: int = 30,
+    extra_visible_dirs: tuple[str, ...] = (),
+) -> str:
     """Run an aws call, raising AWSError (with AccessDenied mapping) on failure."""
-    rc, out, err = run_aws(args, profile, timeout=timeout)
+    # Forwarded only when set: ``run_aws`` is the chokepoint tests monkeypatch,
+    # and a call without a visible-dir grant keeps the exact call shape those
+    # stubs were written against.
+    if extra_visible_dirs:
+        rc, out, err = run_aws(
+            args, profile, timeout=timeout, extra_visible_dirs=extra_visible_dirs
+        )
+    else:
+        rc, out, err = run_aws(args, profile, timeout=timeout)
     if rc != 0:
         # Only attach an IAM-statement remediation hint when the failure is a
         # genuine authorization error. Client-side errors (NoRegion,

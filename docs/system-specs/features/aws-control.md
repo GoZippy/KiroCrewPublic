@@ -109,6 +109,103 @@ and `TestDriveMove.test_move_copy_failure_issues_no_delete`. The copy carries
 both `--expected-bucket-owner` and `--expected-source-bucket-owner`
 (`test_aws_control_storage.py::TestCopyObject.test_copy_object_is_owner_pinned_on_both_ends`).
 
+`routes._handle_drive_preview` is the gateway-proxied read behind the dashboard's
+text preview: the browser cannot fetch a presigned URL itself (the bucket has no
+CORS configuration), so the gateway reads a bounded head of the object through
+`storage.get_object_head_bytes` and returns it decoded. The CLI only writes to a
+path, so the bytes stage through a fresh per-call directory under
+`storage.STAGING_DIR_LEAF` (`aws-control-staging`), a top-level leaf of the data
+home that every agent sandbox bind-masks and the shared file-tool gate refuses —
+a same-UID agent cannot swap the destination for a link between the gateway's
+create and the CLI's open. Top-level on purpose: a mask covers the leaf, not its
+ancestors, so a leaf under `apps/aws-control/` would leave agent-writable
+directories that a rename could swap out from under a transfer; at the top level
+the only ancestors are the data home and `$HOME`, the residual every other
+fenced leaf already stands on. That same mask would hide the directory from the
+sandboxed CLI, so the per-call directory is granted to that one fixed-argv spawn
+through `engine.run_aws(extra_visible_dirs=...)`. The mask is a Linux/macOS
+mechanism; on Windows, which has no sandbox, the destination is pinned by
+identity instead — the whole path, not just the file. The staging root and then
+the per-call directory are each opened and held through
+`platform_compat.pin_directory` (a handle without `FILE_SHARE_DELETE`, which
+refuses a link or reparse point at the name and, while held, lets neither that
+directory nor anything above it be renamed or deleted); inside the pinned
+directory the gateway creates the file itself with `O_EXCL` (a pre-planted name
+— a hard link to a sensitive file included — fails the create), holds that
+handle across the CLI call, re-checks device, inode and link count against it
+once the CLI returns, and reads the bytes back through the handle rather than by
+reopening the path; the directory is removed before the call returns. A
+0-byte object makes the byte range unsatisfiable (S3 answers 416
+`InvalidRange`), which reads as the empty preview it is, not as a failure. The head
+is fetched with an 8 KB look-ahead past the 256 KB window, redacted whole, and
+only then cut to the window at a whitespace boundary, so a secret straddling
+the window's end is masked rather than shipped as an unrecognised prefix. The
+response carries `truncated` (the object continues past the window) and
+`redacted` (the egress redactor masked at least one value), and the dashboard
+shows a one-line notice for each — the redaction notice at body weight, since
+it changes the meaning of every byte below it — so a masked value is never read
+as the file's own bytes. The window is a byte budget: the redacted text is cut
+to `_PREVIEW_MAX_BYTES` of UTF-8, not characters, so a multibyte file cannot
+carry the look-ahead past it. The dialog header names the file and, for a
+nested key, its folder muted beside it, so two same-named search hits stay
+distinguishable once open. `routes._handle_drive_download` returns the stored `contentType`
+from the same HEAD that gates the presign, and the dashboard routes a `.pdf`
+key whose stored type is not `application/pdf` (an object uploaded before
+content types were set, served as octet-stream) to the "cannot be previewed"
+fallback instead of an empty sandboxed frame.
+
+`routes._handle_drive_search` matches FILE NAMES only (the full section-relative
+key, case-insensitively), never contents, and the dashboard's search box says
+so ("Search by file name or path…" — the match runs over the whole
+relative key, folder segments included, but only files are returned). While a search is active the folder view, its
+crumbs, the folder-scoped write controls (Upload, New folder) and the grid/list
+toggle are all withdrawn together: results span the whole section and always
+render as a table, so a write would land in a folder the reader cannot see and
+the toggle would visibly do nothing. The section's drop zone goes inert rather
+than absent — it still swallows a dropped OS file (the page's only
+`dragover`/`drop` `preventDefault`, without which the browser navigates the
+tab to the file) but uploads nothing. A refinement keeps the previous query's
+rows on screen (`keepPreviousData`) and marks them busy with a "Searching…"
+line while the new walk runs, so stale rows are never read as the new answer.
+Each hit carries the same overflow menu as a file row (Download, Rename, Share)
+plus "Open containing folder", with Delete alone below a separator; rename and
+delete run in place against the hit's own path (the delete confirmation names
+the full relative key, since same-named files from different folders sit side
+by side in results) and re-run the search. "Open containing folder" clears the
+search, navigates to the hit's directory, and marks the hit's row (or grid
+card) for a few seconds counted from the moment the row appears — the listing
+is a CLI round-trip, so a clock started at the click could expire before there
+is anything to mark — scrolling it into view and moving keyboard focus onto it
+as it mounts (the menu trigger the reader activated unmounted with the search
+view, and the ring alone is a cue assistive technology never announces), so the
+reader does not re-find by eye the file they just searched for; a hit that sits
+past the first listing page is paged in automatically until its row mounts (or
+the folder runs out), and navigating to any other folder retires the marker.
+
+Rename (rows, grid cards, and search hits) is a same-directory call to the move
+endpoint, so every move guarantee applies and only the refusal wording is
+rename's own. Its completion is scoped to the row that started it: the in-place
+editor may have moved to another row while the request was in flight, and the
+name being typed there survives — a success closes the editor only if it still
+belongs to the renamed row, and a failure lands inline only there; when the
+editor has moved on, the failure is reported in the page-level notice naming
+the file (`rename_failed_named`), never dropped. Delete follows the same rule:
+its inline notice lives in the confirmation strip, and a rejection arriving
+after that strip is gone (`delete_failed_named`) goes to the page-level notice.
+A query change closes every in-place editor with the view it belonged to, in
+flight or not — the request finishes regardless, and its outcome takes the
+page-level route above.
+
+On Linux the staging root is created empty before every namespace spawn
+(`sandbox._CREW_PRECREATE_HIDDEN_DIR_LEAVES`, materialised by
+`sandbox._materialize_maskable_dirs`): the launcher's mask loop only binds over
+a directory that exists, so a root created lazily on first preview would be
+visible to every sandbox already running. The materialisation is fail-closed:
+a non-directory squatting the name, a creation failure other than `EEXIST`, or
+a data home that cannot be resolved at all refuses the spawn
+(`SandboxCeilingUnsealable`) rather than launching the agent with the directory
+unmasked.
+
 ## Publishing and sharing
 
 `routes._publish_gate` applies the shared fail-closed publish-governance decision
@@ -286,9 +383,9 @@ resources itself.
 ## HTTP surface
 
 `routes.register_routes` exposes owner-gated reads for accounts, available
-profiles, reconnect guidance, drive status/list/download, costs, library,
-backup status, share metadata, and rendered IAM policy. Its mutations are
-profile registration; drive bootstrap, upload, delete, move, folder
+profiles, reconnect guidance, drive status/list/download/preview/search, costs,
+library, backup status, share metadata, and rendered IAM policy. Its mutations
+are profile registration; drive bootstrap, upload, delete, move, folder
 create/delete, and share; share-ledger removal; library push and library
 removal; backup run, nightly toggle, and staged restore.
 

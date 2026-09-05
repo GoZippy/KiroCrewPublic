@@ -51,6 +51,8 @@ P0_ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", "/drive/{account}"),
     ("GET", "/drive/{account}/list"),
     ("GET", "/drive/{account}/download"),
+    ("GET", "/drive/{account}/preview"),
+    ("GET", "/drive/{account}/search"),
     ("GET", "/costs/{account}"),
     ("GET", "/library/{account}"),
     ("GET", "/backup/{account}"),
@@ -702,7 +704,7 @@ class TestDriveGuards:
             mock.patch.object(
                 routes_mod.storage_mod, "find_drive", return_value="kirocrew-drive-abc"
             ),
-            mock.patch.object(routes_mod.storage_mod, "object_exists", return_value=True),
+            mock.patch.object(routes_mod.storage_mod, "head_object_meta", return_value={}),
             mock.patch.object(
                 routes_mod.storage_mod, "presign", return_value="https://signed"
             ) as presign,
@@ -1574,7 +1576,7 @@ class TestRound16Hardening:
             mock.patch.object(
                 routes_mod.storage_mod, "find_drive", return_value="kirocrew-drive-abc"
             ),
-            mock.patch.object(routes_mod.storage_mod, "object_exists", return_value=True),
+            mock.patch.object(routes_mod.storage_mod, "head_object_meta", return_value={}),
             mock.patch.object(routes_mod.storage_mod, "presign", return_value="https://signed"),
             mock.patch.object(routes_mod, "_audit") as audit,
         ):
@@ -1820,7 +1822,7 @@ class TestRound19Hardening:
             mock.patch.object(
                 routes_mod.storage_mod, "find_drive", return_value="kirocrew-drive-abc"
             ),
-            mock.patch.object(routes_mod.storage_mod, "object_exists", return_value=False),
+            mock.patch.object(routes_mod.storage_mod, "head_object_meta", return_value=None),
             mock.patch.object(routes_mod.storage_mod, "presign") as presign,
         ):
             req = _request(

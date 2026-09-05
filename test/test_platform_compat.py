@@ -1014,6 +1014,63 @@ class TestDirLinkShims:
         assert os.readlink(str(link)) == str(target)
 
 
+class TestPinDirectory:
+    """``pin_directory``: hold a directory so a child written by PATH stays put.
+
+    Every platform: the open refuses anything that is not a real directory.
+    Windows only: the held handle blocks rename/delete -- the property the
+    caller relies on when a same-UID watcher could otherwise swap the directory
+    for a junction between a check and a child process's open.
+    """
+
+    def test_a_real_directory_pins_and_releases(self, tmp_path):
+        target = tmp_path / "dir"
+        target.mkdir()
+        fd = pc.pin_directory(target)
+        try:
+            assert fd >= 0
+            assert stat.S_ISDIR(os.fstat(fd).st_mode)
+        finally:
+            os.close(fd)
+        # Released: the directory is ordinary again.
+        target.rename(tmp_path / "moved")
+
+    def test_a_file_at_the_name_is_refused(self, tmp_path):
+        regular = tmp_path / "f.txt"
+        regular.write_text("x")
+        with pytest.raises(NotADirectoryError):
+            pc.pin_directory(regular)
+
+    def test_a_link_at_the_name_is_refused_not_followed(self, tmp_path):
+        # A watcher's whole move is to put a link where the directory was; the
+        # pin must fail on it rather than pin the link's TARGET in its place.
+        target = tmp_path / "target"
+        target.mkdir()
+        link = tmp_path / "link"
+        pc.symlink_or_junction(target, link)
+        with pytest.raises(OSError):
+            pc.pin_directory(link)
+
+    @pytest.mark.skipif(not pc.IS_WINDOWS, reason="a held handle blocks rename only on Windows")
+    def test_a_pinned_directory_cannot_be_renamed_or_removed(self, tmp_path):
+        # The pin is on the DIRECTORY: its children can still be removed (the
+        # caller holds its own file open for that), but the directory itself
+        # can be neither renamed nor deleted until the handle is released.
+        target = tmp_path / "dir"
+        target.mkdir()
+        fd = pc.pin_directory(target)
+        try:
+            with pytest.raises(OSError):
+                target.rename(tmp_path / "swapped")
+            with pytest.raises(OSError):
+                target.rmdir()
+            assert target.is_dir()
+        finally:
+            os.close(fd)
+        target.rename(tmp_path / "swapped")
+        assert (tmp_path / "swapped").is_dir()
+
+
 # ---------------------------------------------------------------------------
 # POSIX-branch coverage for the new platform_compat helpers. The
 # tests below deliberately exercise the ``if IS_POSIX:`` / Linux ``/proc`` paths

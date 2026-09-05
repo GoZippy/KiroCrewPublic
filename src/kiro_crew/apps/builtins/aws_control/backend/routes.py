@@ -12,6 +12,8 @@ READS
 ``GET /drive/{account}``                       drive presence + cached usage
 ``GET /drive/{account}/list``                  one listing page (?section&path&token)
 ``GET /drive/{account}/download``              short-lived download URL (?section&key)
+``GET /drive/{account}/preview``               first bytes of a text file (?section&key)
+``GET /drive/{account}/search``                filename search in a section (?section&q)
 ``GET /costs/{account}``                       cached bill (?refresh=1 re-queries CE)
 ``GET /library/{account}``                     local artifacts + reconciled push state
 ``GET /backup/{account}``                      backup state + remote archive listing
@@ -89,6 +91,7 @@ from kiro_crew.deploy import profiles as deploy_profiles
 from kiro_crew.deploy.engine import AWSError
 from kiro_crew.loop_lock import LoopBoundLock
 from kiro_crew.publish_governance import publish_denied_reason
+from kiro_crew.security import redact_credentials, redact_exfiltration_urls
 from kiro_crew.sel import sel
 
 logger = logging.getLogger(__name__)
@@ -102,6 +105,23 @@ _MAX_UPLOAD_BYTES = 512 * 1024 * 1024
 
 #: Download links are redirects in spirit: minted per click, short-lived.
 _DOWNLOAD_URL_SECS = 60
+
+#: The preview window. A preview is not a download: it answers "what is in
+#: this file" for text-shaped objects, so 256 KB of head bytes is plenty and
+#: bounds what one click moves through the gateway. Past it the response says
+#: ``truncated`` and the frontend tells the user only the head is shown.
+_PREVIEW_MAX_BYTES = 256 * 1024
+
+#: Bytes fetched PAST the window so the egress redactor sees a secret that
+#: straddles the window's end whole. Sized well above the longest credential
+#: the patterns match (a session token runs to a couple of KB); anything
+#: longer and whitespace-free is dropped by the boundary back-off instead.
+_PREVIEW_REDACT_LOOKAHEAD = 8 * 1024
+
+#: How far back from the cut the trim looks for whitespace before giving up
+#: and cutting hard. Far enough that any line of ordinary text has one;
+#: bounded so a minified blob still previews rather than trimming to nothing.
+_PREVIEW_TRIM_SEARCH = 4 * 1024
 
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
@@ -888,9 +908,12 @@ async def _handle_drive_download(request: web.Request) -> web.Response:
         # Presigning is LOCAL signing - S3 is never consulted - so a stale or
         # typo'd key mints a URL that looks fine and 404s when opened. Share has
         # required this head-object since round 3; download mints the same kind
-        # of bearer URL and needs the same precondition.
-        exists = await asyncio.to_thread(
-            storage_mod.object_exists,
+        # of bearer URL and needs the same precondition. The same HEAD carries
+        # the stored Content-Type, returned so the preview can tell a real PDF
+        # from a `.pdf`-named object served as octet-stream (uploaded before
+        # content types were set), which a sandboxed iframe shows as blank.
+        meta = await asyncio.to_thread(
+            storage_mod.head_object_meta,
             profile,
             region,
             bucket,
@@ -898,7 +921,7 @@ async def _handle_drive_download(request: web.Request) -> web.Response:
             key,
             account=account,
         )
-        if not exists:
+        if meta is None:
             return _not_found("no such file in this drive", "object_missing")
         url = await asyncio.to_thread(
             storage_mod.presign,
@@ -918,7 +941,183 @@ async def _handle_drive_download(request: web.Request) -> web.Response:
     # disconnect: shield keeps the audit being written even when the await
     # itself is cancelled.
     await asyncio.shield(_audit("drive_download", f"{section}/{key}", "granted"))
-    return web.json_response({"url": url, "expiresSecs": _DOWNLOAD_URL_SECS})
+    content_type = meta.get("ContentType")
+    return web.json_response(
+        {
+            "url": url,
+            "expiresSecs": _DOWNLOAD_URL_SECS,
+            "contentType": content_type if isinstance(content_type, str) else None,
+        }
+    )
+
+
+async def _handle_drive_preview(request: web.Request) -> web.Response:
+    """Head bytes of a text object, read gateway-side and returned as JSON.
+
+    A browser ``fetch`` against the presigned URL is blocked by CORS (the
+    bucket deliberately carries none), so the gateway proxies the read. A
+    plain read: no bearer URL is minted, so unlike download there is no
+    publish gate and nothing to audit as a grant. Binary content is not
+    detected here — the frontend decides by extension whether to call this
+    endpoint at all.
+    """
+    ctx = await _require_drive(request)
+    if isinstance(ctx, web.Response):
+        return ctx
+    account, profile, region, bucket = ctx
+    section = _valid_section(request)
+    if isinstance(section, web.Response):
+        return section
+    key = request.rel_url.query.get("key", "")
+    err = storage_mod.validate_key(key)
+    if err:
+        return _bad_request(err, "invalid_key")
+    try:
+        # Same precondition as download: a typo'd key must answer 404 rather
+        # than surface as an opaque transfer failure.
+        exists = await asyncio.to_thread(
+            storage_mod.object_exists,
+            profile,
+            region,
+            bucket,
+            section,
+            key,
+            account=account,
+        )
+        if not exists:
+            return _not_found("no such file in this drive", "object_missing")
+        data, size = await asyncio.to_thread(
+            storage_mod.get_object_head_bytes,
+            profile,
+            region,
+            bucket,
+            section,
+            key,
+            account=account,
+            # The window PLUS the redaction look-ahead: the redactor must see a
+            # secret whole, and a secret that straddles the window's end would
+            # otherwise reach it as a prefix it cannot recognise.
+            max_bytes=_PREVIEW_MAX_BYTES + _PREVIEW_REDACT_LOOKAHEAD,
+        )
+    except AWSError as exc:
+        return _aws_failed(exc)
+    except (ValueError, OSError) as exc:
+        # The staging fence refused (a link squatting the staging root, a
+        # non-directory at the path) or the local filesystem failed around the
+        # transfer. Neither is an AWS failure and neither is the caller's
+        # doing, so it is a coded 500 the dashboard can name -- not an
+        # uncoded crash. The exception text stays out of the body: an OSError
+        # carries the staging path, which is gateway-internal.
+        logger.warning("drive preview staging failed: %s", _safe_error(exc))
+        return web.json_response(
+            {"error": "the preview could not be staged locally", "code": "preview_staging_failed"},
+            status=500,
+        )
+    # Decode, redact and trim OFF the event loop, like the sibling search's
+    # redaction: the redactor's base64 passes are O(k·n) over a buffer sized
+    # by the caller's window, and a base64-dense object would otherwise hold
+    # every other request behind this one.
+    text, truncated, redacted = await asyncio.to_thread(_redact_preview, data, size)
+    return web.json_response(
+        {
+            "content": text,
+            "truncated": truncated,
+            "redacted": redacted,
+        }
+    )
+
+
+def _redact_preview(data: bytes, size: int) -> tuple[str, bool, bool]:
+    """Decode the fetched head, redact it whole, then cut it to the window.
+
+    errors="replace" so a stray non-UTF-8 byte degrades to the replacement
+    character instead of failing the whole preview. The text then passes
+    through the same egress redactor as listing and search names: a file
+    that happens to hold a credential renders masked in the dashboard, the
+    same way it would in a chat surface. Whether a redactor FIRED is reported
+    alongside, for the same reason truncation is: a reader checking a config
+    file must be told the masked values are the preview's, not the file's.
+
+    Redaction runs over the WHOLE buffer (window + look-ahead) and the cut to
+    the window happens after it, so a secret crossing the window's end is
+    masked before anything is trimmed. The cut then backs off to the last
+    whitespace inside the tail, dropping any run the cut would split: a
+    token longer than the look-ahead is the one thing the redactor could
+    still have seen only partially, and a split run is never shown.
+    """
+    text = data.decode("utf-8", errors="replace")
+    text, credential_hits = redact_credentials(text)
+    text, url_hits = redact_exfiltration_urls(text)
+    truncated = size > _PREVIEW_MAX_BYTES
+    if truncated:
+        text = _trim_preview(text, _PREVIEW_MAX_BYTES)
+    return text, truncated, bool(credential_hits or url_hits)
+
+
+def _trim_preview(text: str, limit: int) -> str:
+    """Cut redacted preview text to ``limit`` UTF-8 BYTES at a whitespace boundary.
+
+    Bytes, not characters: the window is a byte budget (it is what the fetch
+    asked for and what the client is sized for), and a character count would
+    let a multibyte file carry up to the whole look-ahead past it. A code point
+    split by the byte cut is dropped rather than shown as a replacement glyph.
+
+    The whitespace back-off is bounded by :data:`_PREVIEW_TRIM_SEARCH`: a
+    whitespace-free blob (minified JSON) would otherwise trim to nothing, so
+    past that distance the cut is a hard one -- the redactor has already seen
+    everything up to the look-ahead, so a hard cut can split a placeholder but
+    not a secret.
+    """
+    encoded = text.encode("utf-8")
+    if len(encoded) <= limit:
+        return text
+    # The text was decoded with errors="replace" and is valid UTF-8, so the only
+    # thing "ignore" can drop here is the code point the byte cut split.
+    shown = encoded[:limit].decode("utf-8", errors="ignore")
+    boundary = max(shown.rfind(" "), shown.rfind("\n"), shown.rfind("\t"))
+    if boundary >= len(shown) - _PREVIEW_TRIM_SEARCH:
+        return shown[: boundary + 1]
+    return shown
+
+
+async def _handle_drive_search(request: web.Request) -> web.Response:
+    """Case-insensitive filename search across the file-drive section.
+
+    Only ``drive`` is searchable: the library and backups have their own
+    listing surfaces, and a search reaching into backup archive keys would
+    surface names the dashboard otherwise never renders. The section is still
+    an explicit query parameter so the route reads like its siblings.
+    """
+    ctx = await _require_drive(request)
+    if isinstance(ctx, web.Response):
+        return ctx
+    account, profile, region, bucket = ctx
+    section = _valid_section(request)
+    if isinstance(section, web.Response):
+        return section
+    if section != "drive":
+        return _bad_request("only the drive section is searchable", "section_not_searchable")
+    query = request.rel_url.query.get("q", "").strip()
+    if not query:
+        return _bad_request("q is required", "empty_query")
+    try:
+        results, capped = await asyncio.to_thread(
+            storage_mod.search_keys,
+            profile,
+            region,
+            bucket,
+            section,
+            query,
+            account=account,
+        )
+    except AWSError as exc:
+        return _aws_failed(exc)
+    # ``limit`` rides along so the capped notice can say the real number: the
+    # cap has one owner (storage.SEARCH_MAX_RESULTS) and the locales never
+    # spell it.
+    return web.json_response(
+        {"results": results, "capped": capped, "limit": storage_mod.SEARCH_MAX_RESULTS}
+    )
 
 
 async def _handle_drive_upload(request: web.Request) -> web.Response:
@@ -2040,6 +2239,8 @@ def register_routes(app: web.Application) -> None:
     r.add_get(f"{_BASE}/drive/{{account}}", _guarded(_handle_drive_status))
     r.add_get(f"{_BASE}/drive/{{account}}/list", _guarded(_handle_drive_list))
     r.add_get(f"{_BASE}/drive/{{account}}/download", _guarded(_handle_drive_download))
+    r.add_get(f"{_BASE}/drive/{{account}}/preview", _guarded(_handle_drive_preview))
+    r.add_get(f"{_BASE}/drive/{{account}}/search", _guarded(_handle_drive_search))
     r.add_get(f"{_BASE}/costs/{{account}}", _guarded(_handle_costs))
     r.add_get(f"{_BASE}/library/{{account}}", _guarded(_handle_library_list))
     r.add_get(f"{_BASE}/backup/{{account}}", _guarded(_handle_backup_status))

@@ -3525,6 +3525,87 @@ def unlink_link_or_junction(path: str | os.PathLike) -> None:
     os.unlink(path)
 
 
+#: ``CreateFileW`` arguments for :func:`pin_directory`. ``BACKUP_SEMANTICS`` is
+#: what lets a directory be opened at all; ``OPEN_REPARSE_POINT`` opens the
+#: reparse point ITSELF instead of following it, so a junction planted at the
+#: name is seen for what it is rather than silently traversed. The share mode
+#: deliberately omits ``FILE_SHARE_DELETE``: that omission is the pin.
+_WIN_GENERIC_READ = 0x80000000
+_WIN_FILE_SHARE_READ_WRITE = 0x00000001 | 0x00000002
+_WIN_OPEN_EXISTING = 3
+_WIN_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+_WIN_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
+_WIN_FILE_ATTRIBUTE_DIRECTORY = 0x00000010
+_WIN_FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
+
+
+def pin_directory(path: str | os.PathLike) -> int:
+    """Open *path* as a directory and return a descriptor that PINS it.
+
+    For code that must let a child process write to ``<dir>/<name>`` by path:
+    the string is re-resolved at the child's open, so a same-UID watcher that
+    renames ``<dir>`` away and plants a link at its name between our check and
+    that open redirects the write. Holding the directory open closes the
+    window differently on each platform:
+
+    * Windows: the handle is opened without ``FILE_SHARE_DELETE``, and a
+      directory with such a handle open can be neither renamed nor deleted --
+      nor can any directory above it -- for as long as the handle lives. The
+      open itself refuses to follow a reparse point, so a junction already
+      sitting at the name fails here instead of being pinned in its target's
+      place.
+    * POSIX: ``O_DIRECTORY | O_NOFOLLOW`` refuses a symlink or a file at the
+      name, and the returned descriptor is usable as ``dir_fd`` so the caller's
+      own opens resolve against the directory it inspected. Holding it does not
+      block a rename (POSIX has no such lock); callers rely on the sandbox mask
+      for that and use the descriptor for their own opens.
+
+    Refuses anything that is not a real directory: a file or a Windows reparse
+    point raises ``NotADirectoryError``; a POSIX symlink fails with whichever
+    of ``ENOTDIR`` / ``ELOOP`` the kernel reports for ``O_DIRECTORY |
+    O_NOFOLLOW``. Release with ``os.close``.
+    """
+    if IS_POSIX:
+        return os.open(
+            os.fspath(path),
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    handle = kernel32.CreateFileW(
+        os.fspath(path),
+        _WIN_GENERIC_READ,
+        _WIN_FILE_SHARE_READ_WRITE,
+        None,
+        _WIN_OPEN_EXISTING,
+        _WIN_FILE_FLAG_BACKUP_SEMANTICS | _WIN_FILE_FLAG_OPEN_REPARSE_POINT,
+        None,
+    )
+    if handle is None or handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())  # type: ignore[attr-defined]
+    # Wrapping the handle in a CRT descriptor lets ``os.fstat`` read the
+    # attributes of what was actually opened, and ``os.close`` release it.
+    fd = msvcrt.open_osfhandle(handle, os.O_RDONLY)  # type: ignore[attr-defined]
+    try:
+        attrs = getattr(os.fstat(fd), "st_file_attributes", 0)
+        if not attrs & _WIN_FILE_ATTRIBUTE_DIRECTORY or attrs & _WIN_FILE_ATTRIBUTE_REPARSE_POINT:
+            raise NotADirectoryError(errno.ENOTDIR, "not a real directory", os.fspath(path))
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
 # Well-known SID for the file's *owner* (implicit). Under a self-relative DACL
 # with inheritance stripped, S-1-3-4 grants access to whoever currently owns
 # the file. See:

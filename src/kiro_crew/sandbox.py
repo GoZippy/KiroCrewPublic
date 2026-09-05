@@ -197,6 +197,15 @@ _CREW_HIDDEN_LEAVES: tuple[str, ...] = (
     # App data holding live credentials or owner-authorization bits. Whole DIRECTORY,
     # not the leaf file, because an atomic write renames a sibling temp into place.
     "apps/aws-control/data",
+    # Gateway-owned transfer staging for the aws-control app: the AWS CLI lands
+    # object bytes here before the gateway reads them back. Masked so a same-UID
+    # agent cannot swap a destination for a link between the gateway's create
+    # and the CLI's open; the CLI spawn that must write into it names its
+    # per-call directory in ``extra_visible_dirs``, which lifts the mask for
+    # that one fixed-argv child only. A TOP-LEVEL leaf rather than one under
+    # ``apps/aws-control/``: a mask covers the leaf, not its ancestors, and an
+    # agent-writable ancestor could be renamed out from under it mid-transfer.
+    "aws-control-staging",
     "apps/meetings/data/edits",
     "whatsapp",
     "workspace/md-notebook/pat",
@@ -385,6 +394,18 @@ _CREW_PRECREATE_READONLY_FILE_LEAVES: tuple[str, ...] = (
     "file_delivery_consent.json",
 )
 
+#: The one masked leaf that carries its own argument (see the sibling-gap note
+#: above): a DIRECTORY the gateway creates on demand, whose EMPTY state is
+#: absent-equivalent because nothing but the gateway reads it -- it cuts a fresh
+#: per-call subdirectory for one CLI transfer and removes it again. Left to lazy
+#: creation, a sandbox spawned on a fresh install before the first transfer finds
+#: the target absent, the ``SENSITIVE_DIRS`` loop skips it, and the directory the
+#: gateway creates later appears INSIDE that running sandbox's view -- where a
+#: same-UID agent can swap the transfer's destination for a link. Materialised
+#: (empty, 0o700) before every namespace spawn instead, so the mask always has a
+#: name to bind over.
+_CREW_PRECREATE_HIDDEN_DIR_LEAVES: tuple[str, ...] = ("aws-control-staging",)
+
 #: What a materialised ceiling holds — the empty JSON object every reader above
 #: already treats as its absent default. NOT a zero-byte file, which is not valid
 #: JSON and would read as CORRUPT rather than as absent.
@@ -527,6 +548,72 @@ def _refuse_if_dangling_symlink(target: str) -> None:
     )
 
 
+def _refuse_if_symlink_leaf(target: str) -> None:
+    """Refuse the spawn when a HIDDEN-dir leaf is itself a symlink or junction.
+
+    Stronger than :func:`_refuse_if_dangling_symlink`, which refuses only a link that
+    resolves to nothing. A leaf that RESOLVES -- a link pointing at a real directory --
+    is the attacker's entry here: ``os.path.isdir`` follows it and reports a directory,
+    so the mask loop binds over the link's TARGET, not the leaf name. The leaf name
+    lives in the writable data home, so a sandboxed process can unlink it and drop an
+    agent-controlled directory in its place, and the pre-created staging directory the
+    preview CLI writes into is then one the agent owns. Unlike a ceiling -- where a
+    resolving link is a pre-existing property closable only by sealing the data-home
+    root -- these leaves are ones this module CREATES, so refusing a link at the name is
+    in scope and costs nothing legitimate: the gateway makes the staging leaf a plain
+    directory, never a link. Refused, not removed, for the same reason as the dangling
+    case: ``lstat`` then ``unlink`` is not atomic.
+    """
+    try:
+        info = os.lstat(target)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise SandboxCeilingUnsealable(
+            f"cannot stat the masked directory {target} to check for a symlink: {exc}"
+        ) from exc
+    if stat.S_ISLNK(info.st_mode):
+        pointed_at = "(unreadable)"
+        with contextlib.suppress(OSError):
+            pointed_at = os.readlink(target)
+        raise SandboxCeilingUnsealable(
+            f"the masked directory {target} is a SYMLINK -> {pointed_at}. The mask would "
+            "bind over the link's target, not the name, leaving the leaf replaceable in a "
+            "writable parent so a sandboxed process could point the pre-created staging "
+            "directory at a tree it controls. Remove or repoint it."
+        )
+
+
+def _require_real_dir_nofollow(target: str) -> None:
+    """Confirm *target* is a real directory with NO-FOLLOW semantics, else refuse.
+
+    Called after ``mkdir`` loses the ``EEXIST`` race: something else won the create, and
+    ``FileExistsError`` alone does not say WHAT now sits at the name. A plain
+    ``os.path.isdir`` would follow a symlink that a racing sandboxed process planted in
+    the window between our checks, so the mask would bind over that link's target. Use
+    ``lstat`` (never follows) and require a real directory at the leaf itself; a link, a
+    file, or anything else there refuses the spawn rather than mask an attacker's target.
+    """
+    try:
+        info = os.lstat(target)
+    except OSError as exc:
+        raise SandboxCeilingUnsealable(
+            f"cannot re-check the masked directory {target} after a create race: {exc}"
+        ) from exc
+    if stat.S_ISLNK(info.st_mode):
+        pointed_at = "(unreadable)"
+        with contextlib.suppress(OSError):
+            pointed_at = os.readlink(target)
+        raise SandboxCeilingUnsealable(
+            f"the masked directory {target} became a SYMLINK -> {pointed_at} in the create "
+            "race. Refusing rather than binding the mask over the link's target."
+        )
+    if not stat.S_ISDIR(info.st_mode):
+        raise SandboxCeilingUnsealable(
+            f"cannot mask {target}: a non-directory won the create race at the path"
+        )
+
+
 def _publish_empty_ceiling(target: str, parent: str) -> bool:
     """Write the empty document to a sibling temp file, then link it into place.
 
@@ -661,6 +748,64 @@ def _materialize_sealable_ceilings() -> list[str]:
                 "inside the sandbox"
             )
 
+    return created
+
+
+def _materialize_maskable_dirs() -> list[str]:
+    """Create the absent on-demand HIDDEN directories so the mask loop can bind over them.
+
+    The mirror image of :func:`_materialize_sealable_ceilings` for
+    :data:`_CREW_PRECREATE_HIDDEN_DIR_LEAVES`: the launcher's ``SENSITIVE_DIRS`` loop
+    is guarded on ``isdir``, so an absent target gets no empty bind over it and the
+    directory the gateway creates later is visible to the running sandbox. Same
+    fail-closed shape as the ceilings -- a dangling link squatting the name, a plain
+    file where the directory should be, or a creation failure other than ``EEXIST``
+    refuses the spawn, because launching anyway runs the agent with the directory
+    unmasked. Plain ``mkdir``, deliberately: every leaf here is a direct child of
+    the data home, and a leaf that needed an intermediate directory would have an
+    agent-writable ancestor a rename could swap out from under the mask.
+
+    Returns the paths it created, so a test can check each one reaches the launcher's
+    hidden list.
+    """
+    created: list[str] = []
+    try:
+        root = str(config_dir())
+    except Exception as exc:
+        # Fail CLOSED, unlike a best-effort lookup: a spawn that went ahead
+        # without the target would run the agent with the staging directory
+        # unmasked, which is exactly the exposure this function exists to
+        # prevent. A data home that cannot be resolved is a host problem to
+        # surface, not a mask to skip.
+        raise SandboxCeilingUnsealable(
+            f"cannot resolve the crew data home to materialise the masked directories: {exc}"
+        ) from exc
+    for leaf in _CREW_PRECREATE_HIDDEN_DIR_LEAVES:
+        target = os.path.join(root, leaf)
+        _refuse_if_dangling_symlink(target)
+        # A leaf that is itself a symlink/junction -- even one that RESOLVES to a real
+        # directory -- is the attack entry: ``isdir`` would follow it and the mask would
+        # bind over the target, not the replaceable name. Refuse before the isdir check.
+        _refuse_if_symlink_leaf(target)
+        if os.path.isdir(target):
+            continue
+        if os.path.exists(target):
+            raise SandboxCeilingUnsealable(
+                f"cannot mask {target}: a non-directory is sitting at the path"
+            )
+        try:
+            os.mkdir(target, 0o700)
+        except FileExistsError:
+            # Something won the create race. ``FileExistsError`` does not say what now
+            # sits at the name, so re-validate with NO-FOLLOW semantics: a symlink an
+            # attacker slipped in during the window must refuse, not be masked over.
+            _require_real_dir_nofollow(target)
+            continue
+        except OSError as exc:
+            raise SandboxCeilingUnsealable(
+                f"cannot create the masked directory {target}: {exc}"
+            ) from exc
+        created.append(target)
     return created
 
 
@@ -3814,6 +3959,9 @@ def namespace_argv(
     # the child mounts, and raises ``SandboxCeilingUnsealable`` rather than launching
     # with a keystone the seal could not cover.
     _materialize_sealable_ceilings()
+    # The mask loop has the same guard (``isdir``), so the on-demand hidden
+    # directories get the same treatment for the same reason.
+    _materialize_maskable_dirs()
 
     script = _build_launcher_script(
         sandbox_level,

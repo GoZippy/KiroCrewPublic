@@ -163,6 +163,7 @@ class TestSecretsAreMaskedInEveryMode:
         "ops_mission_control_secrets.json",
         "whatsapp",
         "apps/aws-control/data",
+        "aws-control-staging",
         "workspace/md-notebook/pat",
         "data.sqlite3",
         "data.sqlite3-wal",

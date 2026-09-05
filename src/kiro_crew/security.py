@@ -7732,6 +7732,15 @@ _CREW_SECRET_LEAVES: list[str] = [
     # opens every one of them directly rather than through this gate, so the app
     # keeps working and future state files are covered without a new entry.
     "apps/aws-control/data",
+    # The same app's gateway-owned transfer staging. Not a secret store: it holds
+    # object bytes in flight between the AWS CLI's write and the gateway's
+    # read-back. It is fenced because the destination path is what a same-UID
+    # agent would swap for a link to make the CLI -- which writes with the
+    # gateway's reach -- land those bytes on a credential file. Every agent
+    # sandbox masks the directory as well (``sandbox._CREW_HIDDEN_LEAVES``); the
+    # one CLI spawn that must write into it is granted its per-call subdirectory
+    # explicitly.
+    "aws-control-staging",
     "browser-cookies.txt",
     "playwright-storage-state.json",
     # Per-session work ledgers (session_ledger.py). Not credentials, but each
