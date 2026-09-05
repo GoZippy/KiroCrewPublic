@@ -8876,7 +8876,8 @@
         "change_your_color_palette_in_display_settings": "表示設定でカラーパレットを変更できます",
         "no_color": "色なし",
         "session_color": "セッションの色",
-        "session_colors": "セッションの色"
+        "session_colors": "セッションの色",
+        "save_failed": "セッションの色を保存できませんでした"
       },
       "sessionFlyout": {
         "new": "新規",
@@ -8988,7 +8989,10 @@
         "stop_this_subagent": "このサブエージェントを停止",
         "tool_other": "ツール {{count}} 個",
         "waiting_for_your_approval_to_start": "開始の承認をお待ちしています",
-        "waiting_to_start_queued_behind_the_concurrency_l": "開始待ち — 同時実行数の上限により待機中"
+        "waiting_to_start_queued_behind_the_concurrency_l": "開始待ち — 同時実行数の上限により待機中",
+        "stop_failed": "サブエージェント {{name}} を停止できませんでした",
+        "stop_all_failed": "サブエージェントを停止できませんでした",
+        "retry_failed_error": "失敗したサブエージェントの一部を再試行できませんでした"
       },
       "subagentRunCard": {
         "agent_finished_other": "{{count}} 個のエージェントが完了",
@@ -9031,7 +9035,8 @@
         "wait_end_now": "待機を終了",
         "wait_ending": "終了中…",
         "wait_remaining": "残り {{time}}",
-        "wait_status": "待機中"
+        "wait_status": "待機中",
+        "end_wait_failed": "待機を終了できませんでした"
       },
       "toolDetails": {
         "auto": "自動",
@@ -9059,7 +9064,9 @@
         "send_enter": "送信 (Enter)",
         "steered_into_the_running_turn": "実行中のターンに追加しました",
         "pin_message": "メッセージをピン留め",
-        "unpin_message": "メッセージのピン留めを解除"
+        "unpin_message": "メッセージのピン留めを解除",
+        "copied": "コピーしました",
+        "copy_failed": "コピーできませんでした"
       },
       "workflowCompletionCard": {
         "hide_result": "結果を非表示",
@@ -9197,7 +9204,8 @@
         "copy_text_only": "テキストをコピー",
         "copied_text": "コピーしました",
         "copy_text_failed": "コピーできませんでした",
-        "copy_text_unavailable": "この環境ではクリップボードがブロックされています。投稿テキストは選択済みです — Ctrl+C / ⌘C を押してください。編集したカードのテキストはカードから直接コピーしてください。"
+        "copy_text_unavailable": "この環境ではクリップボードがブロックされています。投稿テキストは選択済みです — Ctrl+C / ⌘C を押してください。編集したカードのテキストはカードから直接コピーしてください。",
+        "export_failed": "共有カードを生成できませんでした"
       }
     },
     "chatPage": {

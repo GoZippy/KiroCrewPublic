@@ -1,6 +1,6 @@
-import { memo, useState, useRef, useEffect, useCallback } from 'react'
+import { memo, useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
-import { Pencil, Send, Copy, Check, Link2, Target, Pin, PinOff } from 'lucide-react'
+import { Pencil, Send, Copy, Check, Link2, Target, Pin, PinOff, X } from 'lucide-react'
 import { copyToClipboard } from '../../utils/clipboard'
 import { copySessionLink } from '../../utils/shareUrl'
 import { HOVER_NONE_ACTIONS_ROW_CLS } from '../../utils/touchActions'
@@ -41,8 +41,22 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
   const [editing, setEditing] = useState(false)
   const ime = useImeGuard()
   const [draft, setDraft] = useState(content)
-  const [copied, setCopied] = useState(false)
-  const [linkCopied, setLinkCopied] = useState(false)
+  // Outcome of the last Copy / Copy-link press, shown on the icon for 1.5s.
+  // `failed` is the refused clipboard write (permission, insecure context):
+  // previously the icon simply never flipped, so the person could not tell
+  // whether the text was copied. Not an ErrorNotice — a clipboard refusal has
+  // no journal context and is not something the agent can fix.
+  type CopyOutcome = 'idle' | 'ok' | 'failed'
+  const [copied, setCopied] = useState<CopyOutcome>('idle')
+  const [linkCopied, setLinkCopied] = useState<CopyOutcome>('idle')
+  const copyOutcomeIcon = (state: CopyOutcome, idle: ReactNode) =>
+    state === 'ok' ? <Check size={14} className="text-ok" />
+      : state === 'failed' ? <X size={14} className="text-danger" />
+        : idle
+  const copyOutcomeLabel = (state: CopyOutcome, idle: string) =>
+    state === 'ok' ? i18nT('pages.chat.userMessage.copied')
+      : state === 'failed' ? i18nT('pages.chat.userMessage.copy_failed')
+        : idle
   const taRef = useRef<HTMLTextAreaElement>(null)
   // Track the copy-reset timer so it can be cleared on unmount.  Without this,
   // the 1.5 s setTimeout below survives test teardown and fires after jsdom
@@ -279,29 +293,35 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
           onClick={() => {
             const pastes = (meta?.pastes as PasteBlock[] | undefined) || []
             const toCopy = pastes.length ? expandPasteTokens(content, pastes) : content
-            copyToClipboard(toCopy).then(() => {
-              setCopied(true)
+            const flash = (outcome: CopyOutcome) => {
+              setCopied(outcome)
               if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
               copyResetTimerRef.current = setTimeout(() => {
                 copyResetTimerRef.current = null
-                setCopied(false)
+                setCopied('idle')
               }, 1500)
-            }).catch(() => {})
+            }
+            // `copyToClipboard` resolves `false` (legacy execCommand fallback
+            // refused) as well as rejecting — both are a copy that did not happen.
+            copyToClipboard(toCopy).then(ok => flash(ok ? 'ok' : 'failed'), () => flash('failed'))
           }}
           className="text-muted hover:text-text p-0.5 rounded transition-colors"
           title={i18nT('pages.chat.userMessage.copy')}
-          aria-label={i18nT('pages.chat.userMessage.copy')}
+          aria-label={copyOutcomeLabel(copied, i18nT('pages.chat.userMessage.copy'))}
         >
-          {copied ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
+          {copyOutcomeIcon(copied, <Copy size={14} />)}
         </button>
         {messageTs && slotKey && (
           <button
-            onClick={() => { copySessionLink(slotKey, slotTitle, messageTs, mode).then(() => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500) }).catch(() => {}) }}
+            onClick={() => {
+              const flash = (outcome: CopyOutcome) => { setLinkCopied(outcome); setTimeout(() => setLinkCopied('idle'), 1500) }
+              copySessionLink(slotKey, slotTitle, messageTs, mode).then(ok => flash(ok ? 'ok' : 'failed'), () => flash('failed'))
+            }}
             className="text-muted hover:text-text p-0.5 rounded transition-colors"
             title={i18nT('pages.chat.userMessage.copy_link_to_message')}
-            aria-label={i18nT('pages.chat.userMessage.copy_link_to_message')}
+            aria-label={copyOutcomeLabel(linkCopied, i18nT('pages.chat.userMessage.copy_link_to_message'))}
           >
-            {linkCopied ? <Check size={14} className="text-ok" /> : <Link2 size={14} />}
+            {copyOutcomeIcon(linkCopied, <Link2 size={14} />)}
           </button>
         )}
         {messageTs && onTogglePin && (

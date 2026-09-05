@@ -9000,7 +9000,8 @@
         "change_your_color_palette_in_display_settings": "ডিসপ্লে সেটিংসে আপনার রঙের প্যালেট পরিবর্তন করুন",
         "no_color": "কোনো রঙ নেই",
         "session_color": "সেশনের রঙ",
-        "session_colors": "সেশনের রঙসমূহ"
+        "session_colors": "সেশনের রঙসমূহ",
+        "save_failed": "সেশনের রঙ সংরক্ষণ করা যায়নি"
       },
       "sessionFlyout": {
         "new": "নতুন",
@@ -9114,7 +9115,10 @@
         "tool_one": "{{count}}টি টুল",
         "tool_other": "{{count}}টি টুল",
         "waiting_for_your_approval_to_start": "শুরু হওয়ার জন্য আপনার অনুমোদনের অপেক্ষায়",
-        "waiting_to_start_queued_behind_the_concurrency_l": "শুরুর অপেক্ষায় — কনকারেন্সি সীমার পেছনে সারিতে আছে"
+        "waiting_to_start_queued_behind_the_concurrency_l": "শুরুর অপেক্ষায় — কনকারেন্সি সীমার পেছনে সারিতে আছে",
+        "stop_failed": "সাবএজেন্ট {{name}} থামানো যায়নি",
+        "stop_all_failed": "সাবএজেন্টগুলো থামানো যায়নি",
+        "retry_failed_error": "কিছু ব্যর্থ সাবএজেন্ট আবার চালানো যায়নি"
       },
       "subagentRunCard": {
         "agent_finished_one": "{{count}}টি এজেন্ট সম্পন্ন",
@@ -9162,7 +9166,8 @@
         "wait_ending": "শেষ করা হচ্ছে…",
         "wait_remaining": "{{time}} বাকি",
         "wait_status": "অপেক্ষমাণ",
-        "blocked_by_security_policy": "নিরাপত্তা নীতি দ্বারা অবরুদ্ধ"
+        "blocked_by_security_policy": "নিরাপত্তা নীতি দ্বারা অবরুদ্ধ",
+        "end_wait_failed": "অপেক্ষা শেষ করা যায়নি"
       },
       "toolDetails": {
         "auto": "স্বয়ংক্রিয়",
@@ -9191,7 +9196,9 @@
         "send_enter": "পাঠান (Enter)",
         "steered_into_the_running_turn": "চলমান টার্নে স্টিয়ার করা হয়েছে",
         "pin_message": "বার্তা পিন করুন",
-        "unpin_message": "বার্তা আনপিন করুন"
+        "unpin_message": "বার্তা আনপিন করুন",
+        "copied": "কপি হয়েছে",
+        "copy_failed": "কপি করা যায়নি"
       },
       "workflowCompletionCard": {
         "hide_result": "ফলাফল লুকাও",
@@ -9330,7 +9337,8 @@
         "copy_text_only": "লেখা কপি করো",
         "copied_text": "কপি হয়েছে",
         "copy_text_failed": "কপি করা যায়নি",
-        "copy_text_unavailable": "এখানে ক্লিপবোর্ড ব্লক করা আছে। তোমার পোস্টের লেখাটা সিলেক্ট করা আছে — Ctrl+C / ⌘C চাপো। কার্ডের যে লেখা তুমি বদলেছ, সেটা কার্ড থেকেই কপি করো।"
+        "copy_text_unavailable": "এখানে ক্লিপবোর্ড ব্লক করা আছে। তোমার পোস্টের লেখাটা সিলেক্ট করা আছে — Ctrl+C / ⌘C চাপো। কার্ডের যে লেখা তুমি বদলেছ, সেটা কার্ড থেকেই কপি করো।",
+        "export_failed": "শেয়ার কার্ড তৈরি করা যায়নি"
       }
     },
     "chatPage": {

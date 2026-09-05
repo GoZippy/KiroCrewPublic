@@ -5,6 +5,7 @@ import { useAppSelector, useAppDispatch } from '../../store'
 import { openActivityToTab, selectSubagent, sseSubagentDone, isAwaitingSpawnApproval } from '../../store/chatSlice'
 import { api } from '../../api/client'
 import { sanitizeLlmOutput } from '../../utils/sanitize'
+import ErrorNotice from '../../components/ErrorNotice'
 import type { SubagentActivity } from '../../types'
 
 import { i18nT } from '../../i18n/t'
@@ -161,18 +162,25 @@ const SubagentProgressBar = memo(function SubagentProgressBar({ slot }: { slot: 
   // spawn approvals keep their explicit approve/reject path.
   const stoppableCount = useMemo(() => activeList.filter(a => a.status === 'running' || a.status === 'tool').length, [activeList])
   const stopTargetCount = stoppableCount + queued
-  // Cancel a running subagent. A failed spawnDelete is swallowed with only a
-  // debug breadcrumb. The 30s reconcile loop below is the safety net that
-  // drops any agent the backend actually stopped.
-  const stopAgent = useCallback((id: string) => {
-    // eslint-disable-next-line no-console -- names which subagent refused to stop; the 30s reconcile loop hides the failure from the UI, so this is the only place a cancel that never landed is visible
-    api.spawnDelete(id).catch(() => console.warn(`spawnDelete failed for subagent ${id}; reconcile loop will resync`))
+  // The most recent refused wave action (a stop, a stop-all, a retry). One slot,
+  // newest wins: these are all answers to the person's last press, and the row
+  // sits under the header where that press happened. The 30s reconcile loop
+  // below still resyncs the cards, but it can only hide a cancel that never
+  // landed — it cannot tell the person it never landed.
+  const [actionError, setActionError] = useState<string | null>(null)
+  // Cancel a running subagent. A refused spawnDelete used to be swallowed with a
+  // console breadcrumb; it now surfaces on the chip.
+  const stopAgent = useCallback((id: string, name: string) => {
+    setActionError(null)
+    api.spawnDelete(id).catch(() => {
+      setActionError(i18nT('pages.chat.subagentProgressBar.stop_failed', { name }))
+    })
   }, [])
   const stopAllMutation = useMutation({
     mutationFn: (targetSlot: string) => api.spawnStopAll(targetSlot),
-    onError: (_error, targetSlot) => {
-      // eslint-disable-next-line no-console -- the reconciliation loop will resync running cards, but queued work has no row id to retry individually
-      console.warn(`spawnStopAll failed for slot ${targetSlot}; reconcile loop will resync`)
+    onMutate: () => setActionError(null),
+    onError: () => {
+      setActionError(i18nT('pages.chat.subagentProgressBar.stop_all_failed'))
     },
   })
   const stopAll = useCallback(() => {
@@ -196,7 +204,18 @@ const SubagentProgressBar = memo(function SubagentProgressBar({ slot }: { slot: 
   }, [])
   const retryFailed = useCallback(() => {
     setRetrying(true)
-    Promise.allSettled(failedIds.map(id => api.spawnRetry(id))).finally(() => setRetrying(false))
+    setActionError(null)
+    // `allSettled` so one refused retry does not abort the rest — but the
+    // rejections are counted, not discarded: a retry that never landed leaves
+    // the card in `error` with the button back at rest, which read as "nothing
+    // happened" rather than "refused".
+    Promise.allSettled(failedIds.map(id => api.spawnRetry(id)))
+      .then(results => {
+        if (results.some(r => r.status === 'rejected')) {
+          setActionError(i18nT('pages.chat.subagentProgressBar.retry_failed_error'))
+        }
+      })
+      .finally(() => setRetrying(false))
   }, [failedIds])
   const openAgent = useCallback((id: string) => {
     dispatch(selectSubagent(id))
@@ -215,7 +234,12 @@ const SubagentProgressBar = memo(function SubagentProgressBar({ slot }: { slot: 
         activeListRef.current.forEach(a => {
           if (!backendIds.has(a.id)) dispatch(sseSubagentDone({ slot, id: a.id, elapsed: Math.round((Date.now() - a.startedAt) / 1000), error: 'reconciliation: agent no longer tracked by backend' }))
         })
-      }).catch(() => {})
+      }).catch(() => {
+        // Deliberately silent: this is a background poll that only ever REMOVES
+        // phantom cards. A refused poll leaves the cards exactly as they were,
+        // the next tick retries in 30s, and the person asked for none of it —
+        // so there is no failed action to report on the chip.
+      })
     }, 30_000)
     return () => { cancelled = true; clearInterval(t); clearInterval(reconcile) }
   }, [hasActive, slot, dispatch])
@@ -284,6 +308,19 @@ const SubagentProgressBar = memo(function SubagentProgressBar({ slot }: { slot: 
             )}
           </span>
         </div>
+        {actionError && (
+          <div className="px-3 pb-1.5">
+            {/* askAgent on: the chip is a status surface with no editable field,
+                and the composer draft below it is persisted per slot. */}
+            <ErrorNotice
+              variant="inline"
+              message={actionError}
+              askAgent
+              onDismiss={() => setActionError(null)}
+              testId="subagent-action-error"
+            />
+          </div>
+        )}
         <div className={`px-3 pb-2 space-y-0.5${collapsed ? ' hidden' : ''}`}>
           {visibleList.map((a, i) => {
             const isLast = i === visibleList.length - 1 && hiddenCount === 0
@@ -357,7 +394,7 @@ const SubagentProgressBar = memo(function SubagentProgressBar({ slot }: { slot: 
                 {stoppable && (
                   <button
                     className="shrink-0 flex items-center text-[11px] px-1 py-0.5 rounded border border-danger/40 text-danger/70 hover:bg-danger-subtle hover:text-danger cursor-pointer transition-all bg-transparent"
-                    onClick={() => stopAgent(a.id)}
+                    onClick={() => stopAgent(a.id, sanitizeLlmOutput(a.agent || a.id))}
                     aria-label={i18nT('pages.chat.subagentProgressBar.stop_subagent', { name: sanitizeLlmOutput(a.agent || a.id) })}
                     title={i18nT('pages.chat.subagentProgressBar.stop_this_subagent')}
                   >

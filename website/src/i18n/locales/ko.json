@@ -8876,7 +8876,8 @@
         "change_your_color_palette_in_display_settings": "색상 팔레트는 표시 설정에서 변경할 수 있습니다",
         "no_color": "색상 없음",
         "session_color": "세션 색상",
-        "session_colors": "세션 색상"
+        "session_colors": "세션 색상",
+        "save_failed": "세션 색상을 저장할 수 없습니다"
       },
       "sessionFlyout": {
         "new": "새로 만들기",
@@ -8988,7 +8989,10 @@
         "stop_this_subagent": "이 서브에이전트 중지",
         "tool_other": "도구 {{count}}개",
         "waiting_for_your_approval_to_start": "시작하려면 승인을 기다리는 중입니다",
-        "waiting_to_start_queued_behind_the_concurrency_l": "시작 대기 중 — 동시 실행 한도로 대기열에 있습니다"
+        "waiting_to_start_queued_behind_the_concurrency_l": "시작 대기 중 — 동시 실행 한도로 대기열에 있습니다",
+        "stop_failed": "서브에이전트 {{name}}을(를) 중지할 수 없습니다",
+        "stop_all_failed": "서브에이전트를 중지할 수 없습니다",
+        "retry_failed_error": "실패한 서브에이전트 중 일부를 다시 시도할 수 없습니다"
       },
       "subagentRunCard": {
         "agent_finished_other": "에이전트 {{count}}개 완료",
@@ -9031,7 +9035,8 @@
         "wait_end_now": "대기 종료",
         "wait_ending": "종료 중…",
         "wait_remaining": "{{time}} 남음",
-        "wait_status": "대기 중"
+        "wait_status": "대기 중",
+        "end_wait_failed": "대기를 종료할 수 없습니다"
       },
       "toolDetails": {
         "auto": "자동",
@@ -9059,7 +9064,9 @@
         "send_enter": "보내기 (Enter)",
         "steered_into_the_running_turn": "실행 중인 턴에 추가되었습니다",
         "pin_message": "Pin message",
-        "unpin_message": "Unpin message"
+        "unpin_message": "Unpin message",
+        "copied": "복사되었습니다",
+        "copy_failed": "복사하지 못했습니다"
       },
       "workflowCompletionCard": {
         "hide_result": "결과 숨기기",
@@ -9197,7 +9204,8 @@
         "copy_text_only": "텍스트 복사",
         "copied_text": "복사되었습니다",
         "copy_text_failed": "복사하지 못했습니다",
-        "copy_text_unavailable": "이 환경에서는 클립보드가 차단되어 있습니다. 게시글 텍스트가 선택되어 있으니 Ctrl+C / ⌘C를 누르세요. 편집한 카드 텍스트는 카드에서 직접 복사하세요."
+        "copy_text_unavailable": "이 환경에서는 클립보드가 차단되어 있습니다. 게시글 텍스트가 선택되어 있으니 Ctrl+C / ⌘C를 누르세요. 편집한 카드 텍스트는 카드에서 직접 복사하세요.",
+        "export_failed": "공유 카드를 만들 수 없습니다"
       }
     },
     "chatPage": {

@@ -8876,7 +8876,8 @@
         "change_your_color_palette_in_display_settings": "在“显示”设置中更改你的配色方案",
         "no_color": "无颜色",
         "session_color": "会话颜色",
-        "session_colors": "会话颜色"
+        "session_colors": "会话颜色",
+        "save_failed": "无法保存会话颜色"
       },
       "sessionFlyout": {
         "new": "新建",
@@ -8988,7 +8989,10 @@
         "stop_this_subagent": "停止此子代理",
         "tool_other": "{{count}} 个工具",
         "waiting_for_your_approval_to_start": "等待你的批准后开始",
-        "waiting_to_start_queued_behind_the_concurrency_l": "等待开始 — 受并发上限限制正在排队"
+        "waiting_to_start_queued_behind_the_concurrency_l": "等待开始 — 受并发上限限制正在排队",
+        "stop_failed": "无法停止子代理 {{name}}",
+        "stop_all_failed": "无法停止子代理",
+        "retry_failed_error": "部分失败的子代理无法重试"
       },
       "subagentRunCard": {
         "agent_finished_other": "{{count}} 个代理已完成",
@@ -9031,7 +9035,8 @@
         "wait_ending": "正在结束…",
         "wait_remaining": "剩余 {{time}}",
         "wait_status": "等待中",
-        "blocked_by_security_policy": "已被安全策略阻止"
+        "blocked_by_security_policy": "已被安全策略阻止",
+        "end_wait_failed": "无法结束等待"
       },
       "toolDetails": {
         "auto": "自动",
@@ -9059,7 +9064,9 @@
         "send_enter": "发送 (Enter)",
         "steered_into_the_running_turn": "已引导到正在运行的这一轮",
         "pin_message": "置顶消息",
-        "unpin_message": "取消置顶"
+        "unpin_message": "取消置顶",
+        "copied": "已复制",
+        "copy_failed": "复制失败"
       },
       "workflowCompletionCard": {
         "hide_result": "隐藏结果",
@@ -9197,7 +9204,8 @@
         "copy_text_only": "复制文案",
         "copied_text": "已复制",
         "copy_text_failed": "复制失败",
-        "copy_text_unavailable": "当前环境禁止写入剪贴板。文案已选中——按 Ctrl+C / ⌘C 复制。你改过的卡片文字请直接从卡片上复制。"
+        "copy_text_unavailable": "当前环境禁止写入剪贴板。文案已选中——按 Ctrl+C / ⌘C 复制。你改过的卡片文字请直接从卡片上复制。",
+        "export_failed": "无法生成分享卡片"
       }
     },
     "chatPage": {

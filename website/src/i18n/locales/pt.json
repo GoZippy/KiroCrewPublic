@@ -9124,7 +9124,8 @@
         "change_your_color_palette_in_display_settings": "Altere sua paleta de cores nas configurações de Exibição",
         "no_color": "Sem cor",
         "session_color": "Cor da sessão",
-        "session_colors": "Cores da sessão"
+        "session_colors": "Cores da sessão",
+        "save_failed": "Não foi possível salvar a cor da sessão"
       },
       "sessionFlyout": {
         "new": "Novo",
@@ -9240,7 +9241,10 @@
         "tool_one": "{{count}} ferramenta",
         "tool_other": "{{count}} ferramentas",
         "waiting_for_your_approval_to_start": "Aguardando sua aprovação para iniciar",
-        "waiting_to_start_queued_behind_the_concurrency_l": "Aguardando para iniciar — na fila devido ao limite de simultaneidade"
+        "waiting_to_start_queued_behind_the_concurrency_l": "Aguardando para iniciar — na fila devido ao limite de simultaneidade",
+        "stop_failed": "Não foi possível parar o subagente {{name}}",
+        "stop_all_failed": "Não foi possível parar os subagentes",
+        "retry_failed_error": "Não foi possível repetir alguns subagentes com falha"
       },
       "subagentRunCard": {
         "agent_finished_many": "{{count}} agentes concluídos",
@@ -9293,7 +9297,8 @@
         "wait_ending": "Encerrando…",
         "wait_remaining": "restam {{time}}",
         "wait_status": "Aguardando",
-        "blocked_by_security_policy": "Bloqueado pela política de segurança"
+        "blocked_by_security_policy": "Bloqueado pela política de segurança",
+        "end_wait_failed": "Não foi possível encerrar a espera"
       },
       "toolDetails": {
         "auto": "Auto",
@@ -9323,7 +9328,9 @@
         "send_enter": "Enviar (Enter)",
         "steered_into_the_running_turn": "Direcionado para o turno em andamento",
         "pin_message": "Fixar mensagem",
-        "unpin_message": "Desafixar mensagem"
+        "unpin_message": "Desafixar mensagem",
+        "copied": "Copiado",
+        "copy_failed": "Falha ao copiar"
       },
       "workflowCompletionCard": {
         "hide_result": "Ocultar resultado",
@@ -9463,7 +9470,8 @@
         "copy_text_only": "Copiar texto",
         "copied_text": "Copiado",
         "copy_text_failed": "Falha ao copiar",
-        "copy_text_unavailable": "A área de transferência está bloqueada aqui. O texto da sua publicação está selecionado — pressione Ctrl+C / ⌘C. O texto do cartão que você editou, copie do próprio cartão."
+        "copy_text_unavailable": "A área de transferência está bloqueada aqui. O texto da sua publicação está selecionado — pressione Ctrl+C / ⌘C. O texto do cartão que você editou, copie do próprio cartão.",
+        "export_failed": "Não foi possível gerar o cartão de compartilhamento"
       }
     },
     "chatPage": {

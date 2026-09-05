@@ -9248,7 +9248,8 @@
         "change_your_color_palette_in_display_settings": "Измените цветовую палитру в настройках отображения",
         "no_color": "Без цвета",
         "session_color": "Цвет сессии",
-        "session_colors": "Цвета сессий"
+        "session_colors": "Цвета сессий",
+        "save_failed": "Не удалось сохранить цвет сессии"
       },
       "sessionFlyout": {
         "new": "Создать",
@@ -9366,7 +9367,10 @@
         "tool_one": "{{count}} инструмент",
         "tool_other": "{{count}} инструмента",
         "waiting_for_your_approval_to_start": "Ожидает вашего одобрения для запуска",
-        "waiting_to_start_queued_behind_the_concurrency_l": "Ожидает запуска — в очереди из-за лимита параллельности"
+        "waiting_to_start_queued_behind_the_concurrency_l": "Ожидает запуска — в очереди из-за лимита параллельности",
+        "stop_failed": "Не удалось остановить субагента {{name}}",
+        "stop_all_failed": "Не удалось остановить субагентов",
+        "retry_failed_error": "Не удалось повторить часть неудачных субагентов"
       },
       "subagentRunCard": {
         "agent_few": "{{count}} агента",
@@ -9424,7 +9428,8 @@
         "wait_ending": "Завершение…",
         "wait_remaining": "осталось {{time}}",
         "wait_status": "Ожидание",
-        "blocked_by_security_policy": "Заблокировано политикой безопасности"
+        "blocked_by_security_policy": "Заблокировано политикой безопасности",
+        "end_wait_failed": "Не удалось завершить ожидание"
       },
       "toolDetails": {
         "auto": "Авто",
@@ -9455,7 +9460,9 @@
         "send_enter": "Отправить (Enter)",
         "steered_into_the_running_turn": "Направлено в выполняющийся ход",
         "pin_message": "Закрепить сообщение",
-        "unpin_message": "Открепить сообщение"
+        "unpin_message": "Открепить сообщение",
+        "copied": "Скопировано",
+        "copy_failed": "Не удалось скопировать"
       },
       "workflowCompletionCard": {
         "hide_result": "Скрыть результат",
@@ -9596,7 +9603,8 @@
         "copy_text_only": "Скопировать текст",
         "copied_text": "Скопировано",
         "copy_text_failed": "Не удалось скопировать",
-        "copy_text_unavailable": "Буфер обмена здесь заблокирован. Текст твоего поста выделен — нажми Ctrl+C / ⌘C. Отредактированный текст карточки скопируй из самой карточки."
+        "copy_text_unavailable": "Буфер обмена здесь заблокирован. Текст твоего поста выделен — нажми Ctrl+C / ⌘C. Отредактированный текст карточки скопируй из самой карточки.",
+        "export_failed": "Не удалось создать карточку для публикации"
       }
     },
     "chatPage": {

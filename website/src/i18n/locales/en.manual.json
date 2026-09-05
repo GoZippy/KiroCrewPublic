@@ -3289,7 +3289,10 @@
         "retry_failed_count": "Retry failed ({{count}})",
         "stop_all": "Stop all",
         "stop_running_subagent": "Stop running subagent",
-        "stop_subagent": "Stop subagent {{name}}"
+        "stop_subagent": "Stop subagent {{name}}",
+        "stop_failed": "Couldn't stop subagent {{name}}",
+        "stop_all_failed": "Couldn't stop the subagents",
+        "retry_failed_error": "Couldn't retry some of the failed subagents"
       },
       "taskProgressBar": {
         "all_tasks_complete": "All tasks complete",
@@ -3331,7 +3334,8 @@
         "wait_end_now": "End wait",
         "wait_ending": "Ending…",
         "wait_remaining": "{{time}} left",
-        "wait_status": "Waiting"
+        "wait_status": "Waiting",
+        "end_wait_failed": "Couldn't end the wait"
       },
       "sessionSummary": {
         "empty_body": "A summary is written when a turn finishes. Send a message to get one for this session.",
@@ -3445,7 +3449,15 @@
         "copy_text_only": "Copy text",
         "copied_text": "Copied",
         "copy_text_failed": "Copy failed",
-        "copy_text_unavailable": "Clipboard is blocked here. Your post text is selected — press Ctrl+C / ⌘C. Copy card edits from the card itself."
+        "copy_text_unavailable": "Clipboard is blocked here. Your post text is selected — press Ctrl+C / ⌘C. Copy card edits from the card itself.",
+        "export_failed": "Couldn't render the share card"
+      },
+      "sessionColorPicker": {
+        "save_failed": "Couldn't save the session color"
+      },
+      "userMessage": {
+        "copied": "Copied",
+        "copy_failed": "Copy failed"
       }
     },
     "chatPage": {

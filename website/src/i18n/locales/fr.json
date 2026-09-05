@@ -9124,7 +9124,8 @@
         "change_your_color_palette_in_display_settings": "Modifiez votre palette de couleurs dans les paramètres d'affichage",
         "no_color": "Aucune couleur",
         "session_color": "Couleur de session",
-        "session_colors": "Couleurs de session"
+        "session_colors": "Couleurs de session",
+        "save_failed": "Impossible d’enregistrer la couleur de session"
       },
       "sessionFlyout": {
         "new": "Nouveau",
@@ -9240,7 +9241,10 @@
         "tool_one": "{{count}} outil",
         "tool_other": "{{count}} outils",
         "waiting_for_your_approval_to_start": "En attente de votre approbation pour démarrer",
-        "waiting_to_start_queued_behind_the_concurrency_l": "En attente de démarrage — mis en file derrière la limite de concurrence"
+        "waiting_to_start_queued_behind_the_concurrency_l": "En attente de démarrage — mis en file derrière la limite de concurrence",
+        "stop_failed": "Impossible d’arrêter le sous-agent {{name}}",
+        "stop_all_failed": "Impossible d’arrêter les sous-agents",
+        "retry_failed_error": "Impossible de réessayer certains sous-agents en échec"
       },
       "subagentRunCard": {
         "agent_finished_many": "{{count}} agents terminés",
@@ -9293,7 +9297,8 @@
         "wait_ending": "Arrêt en cours…",
         "wait_remaining": "Il reste {{time}}",
         "wait_status": "En attente",
-        "blocked_by_security_policy": "Bloqué par la politique de sécurité"
+        "blocked_by_security_policy": "Bloqué par la politique de sécurité",
+        "end_wait_failed": "Impossible d’arrêter l’attente"
       },
       "toolDetails": {
         "auto": "Auto",
@@ -9323,7 +9328,9 @@
         "send_enter": "Envoyer (Enter)",
         "steered_into_the_running_turn": "Réorienté dans le tour en cours",
         "pin_message": "Épingler le message",
-        "unpin_message": "Désépingler le message"
+        "unpin_message": "Désépingler le message",
+        "copied": "Copié",
+        "copy_failed": "Échec de la copie"
       },
       "workflowCompletionCard": {
         "hide_result": "Masquer le résultat",
@@ -9463,7 +9470,8 @@
         "copy_text_only": "Copier le texte",
         "copied_text": "Copié",
         "copy_text_failed": "Échec de la copie",
-        "copy_text_unavailable": "Le presse-papiers est bloqué ici. Le texte de ta publication est sélectionné — appuie sur Ctrl+C / ⌘C. Le texte de la carte que tu as modifié se copie depuis la carte elle-même."
+        "copy_text_unavailable": "Le presse-papiers est bloqué ici. Le texte de ta publication est sélectionné — appuie sur Ctrl+C / ⌘C. Le texte de la carte que tu as modifié se copie depuis la carte elle-même.",
+        "export_failed": "Impossible de générer la carte de partage"
       }
     },
     "chatPage": {

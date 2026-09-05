@@ -9000,7 +9000,8 @@
         "change_your_color_palette_in_display_settings": "Ändern Sie Ihre Farbpalette in den Anzeigeeinstellungen",
         "no_color": "Keine Farbe",
         "session_color": "Sitzungsfarbe",
-        "session_colors": "Sitzungsfarben"
+        "session_colors": "Sitzungsfarben",
+        "save_failed": "Die Sitzungsfarbe konnte nicht gespeichert werden"
       },
       "sessionFlyout": {
         "new": "Neu",
@@ -9114,7 +9115,10 @@
         "tool_one": "{{count}} Werkzeug",
         "tool_other": "{{count}} Werkzeuge",
         "waiting_for_your_approval_to_start": "Warten auf deine Genehmigung zum Starten",
-        "waiting_to_start_queued_behind_the_concurrency_l": "Warten auf den Start — in der Warteschlange hinter der Parallelitätsgrenze"
+        "waiting_to_start_queued_behind_the_concurrency_l": "Warten auf den Start — in der Warteschlange hinter der Parallelitätsgrenze",
+        "stop_failed": "Subagent {{name}} konnte nicht gestoppt werden",
+        "stop_all_failed": "Die Subagents konnten nicht gestoppt werden",
+        "retry_failed_error": "Einige fehlgeschlagene Subagents konnten nicht wiederholt werden"
       },
       "subagentRunCard": {
         "agent_finished_one": "{{count}} Agent abgeschlossen",
@@ -9162,7 +9166,8 @@
         "wait_ending": "Wird beendet…",
         "wait_remaining": "{{time}} übrig",
         "wait_status": "Wartet",
-        "blocked_by_security_policy": "Durch Sicherheitsrichtlinie blockiert"
+        "blocked_by_security_policy": "Durch Sicherheitsrichtlinie blockiert",
+        "end_wait_failed": "Das Warten konnte nicht beendet werden"
       },
       "toolDetails": {
         "auto": "Automatisch",
@@ -9191,7 +9196,9 @@
         "send_enter": "Senden (Enter)",
         "steered_into_the_running_turn": "In den laufenden Zug eingesteuert",
         "pin_message": "Nachricht anheften",
-        "unpin_message": "Nachricht loslösen"
+        "unpin_message": "Nachricht loslösen",
+        "copied": "Kopiert",
+        "copy_failed": "Kopieren fehlgeschlagen"
       },
       "workflowCompletionCard": {
         "hide_result": "Ergebnis ausblenden",
@@ -9330,7 +9337,8 @@
         "copy_text_only": "Text kopieren",
         "copied_text": "Kopiert",
         "copy_text_failed": "Kopieren fehlgeschlagen",
-        "copy_text_unavailable": "Die Zwischenablage ist hier blockiert. Dein Beitragstext ist markiert — drücke Strg+C / ⌘C. Bearbeiteten Kartentext kopierst du direkt aus der Karte."
+        "copy_text_unavailable": "Die Zwischenablage ist hier blockiert. Dein Beitragstext ist markiert — drücke Strg+C / ⌘C. Bearbeiteten Kartentext kopierst du direkt aus der Karte.",
+        "export_failed": "Die Share-Karte konnte nicht erzeugt werden"
       }
     },
     "chatPage": {

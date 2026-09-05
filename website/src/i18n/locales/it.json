@@ -9124,7 +9124,8 @@
         "change_your_color_palette_in_display_settings": "Cambia la tua palette di colori nelle impostazioni di visualizzazione",
         "no_color": "Nessun colore",
         "session_color": "Colore della sessione",
-        "session_colors": "Colori delle sessioni"
+        "session_colors": "Colori delle sessioni",
+        "save_failed": "Impossibile salvare il colore della sessione"
       },
       "sessionFlyout": {
         "new": "Nuovo",
@@ -9240,7 +9241,10 @@
         "tool_one": "{{count}} strumento",
         "tool_other": "{{count}} strumenti",
         "waiting_for_your_approval_to_start": "In attesa della tua approvazione per avviare",
-        "waiting_to_start_queued_behind_the_concurrency_l": "In attesa di avvio — in coda a causa del limite di concorrenza"
+        "waiting_to_start_queued_behind_the_concurrency_l": "In attesa di avvio — in coda a causa del limite di concorrenza",
+        "stop_failed": "Impossibile arrestare il subagente {{name}}",
+        "stop_all_failed": "Impossibile arrestare i subagenti",
+        "retry_failed_error": "Impossibile riprovare alcuni subagenti non riusciti"
       },
       "subagentRunCard": {
         "agent_finished_many": "{{count}} agenti completati",
@@ -9293,7 +9297,8 @@
         "wait_ending": "Terminazione…",
         "wait_remaining": "{{time}} rimanenti",
         "wait_status": "In attesa",
-        "blocked_by_security_policy": "Bloccato dalla policy di sicurezza"
+        "blocked_by_security_policy": "Bloccato dalla policy di sicurezza",
+        "end_wait_failed": "Impossibile terminare l’attesa"
       },
       "toolDetails": {
         "auto": "Automatico",
@@ -9323,7 +9328,9 @@
         "send_enter": "Invia (Invio)",
         "steered_into_the_running_turn": "Indirizzato nel turno in corso",
         "pin_message": "Fissa messaggio",
-        "unpin_message": "Rimuovi fissaggio"
+        "unpin_message": "Rimuovi fissaggio",
+        "copied": "Copiato",
+        "copy_failed": "Copia non riuscita"
       },
       "workflowCompletionCard": {
         "hide_result": "Nascondi il risultato",
@@ -9463,7 +9470,8 @@
         "copy_text_only": "Copia testo",
         "copied_text": "Copiato",
         "copy_text_failed": "Copia non riuscita",
-        "copy_text_unavailable": "Gli appunti sono bloccati qui. Il testo del tuo post è selezionato: premi Ctrl+C / ⌘C. Il testo della card che hai modificato va copiato dalla card stessa."
+        "copy_text_unavailable": "Gli appunti sono bloccati qui. Il testo del tuo post è selezionato: premi Ctrl+C / ⌘C. Il testo della card che hai modificato va copiato dalla card stessa.",
+        "export_failed": "Impossibile generare la scheda di condivisione"
       }
     },
     "chatPage": {

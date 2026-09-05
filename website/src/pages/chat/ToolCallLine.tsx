@@ -8,6 +8,7 @@ import { useLanguage } from '../../i18n/LanguageProvider'
 import { DERIVE_LABEL_THRESHOLD_CHARS, deriveShellSummary, pickToolLabel } from '../../utils/toolLabel'
 import { LoaderCircle, CircleSlash, CircleAlert, CircleDot, Lock, PanelRight } from 'lucide-react'
 import { PanelRightSolid } from '../../components/icons/panels'
+import ErrorNotice from '../../components/ErrorNotice'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import type { ChatMessage } from '../../types'
 import { ToolDetails } from './ToolDetails'
@@ -366,6 +367,9 @@ export default memo(function ToolCallLine({ message, running: _running, slot, on
   // is not overwritten by the pre-approval ts.
   const approvalResolvedRef = useRef(false)
   const [endingWait, setEndingWait] = useState(false)
+  // The refused End-wait press. Previously the button only rolled back to its
+  // idle label, so a transport failure looked like a press that did nothing.
+  const [endWaitError, setEndWaitError] = useState<string | null>(null)
 
   // Re-arm the button for a NEW sleep. Left latched otherwise: after a
   // successful request the row lives on for up to one poll interval, and a
@@ -376,16 +380,20 @@ export default memo(function ToolCallLine({ message, running: _running, slot, on
     if (id !== endedWaitIdRef.current) {
       endedWaitIdRef.current = id
       setEndingWait(false)
+      setEndWaitError(null)
     }
   }, [waitState?.wait_id])
 
   const endWaitNow = useCallback(() => {
     if (!waitSlotKey || !waitState || endingWait) return
     setEndingWait(true)
+    setEndWaitError(null)
     void api.endWait(waitSlotKey, waitState.wait_id).catch(() => {
-      // Roll back so a transport failure is retryable. A 409 also lands here,
-      // and re-enabling is still right: the countdown it referred to is gone.
+      // Roll back so a transport failure is retryable, and say so. A 409 also
+      // lands here, and re-enabling is still right: the countdown it referred
+      // to is gone — the row leaves on the next poll and takes the notice.
       setEndingWait(false)
+      setEndWaitError(i18nT('pages.chat.toolCallLine.end_wait_failed'))
     })
   }, [waitSlotKey, waitState, endingWait])
 
@@ -608,6 +616,13 @@ export default memo(function ToolCallLine({ message, running: _running, slot, on
   // fetch for server state). Gives request dedup across pills touching the same
   // file and stale-while-revalidate caching so re-renders don't re-probe —
   // replacing the manual AbortController + onFileOpenRef + setFileExists dance.
+  //
+  // The query's error is deliberately NOT read: this gates an affordance (the
+  // Open-file pill), it is not something the person asked for. A refused probe
+  // collapses to `fileExists = false` on purpose — the pill is simply not
+  // offered, which is the same outcome as the file not being there, and a
+  // failed-probe notice on every tool row would be noise about a link nobody
+  // clicked. Opening the file itself reports its own failure when pressed.
   const { data: fileExists = false } = useQuery({
     queryKey: ['tool-pill-file-exists', filePath],
     queryFn: async ({ signal }) => {
@@ -994,6 +1009,10 @@ export default memo(function ToolCallLine({ message, running: _running, slot, on
               ? i18nT('pages.chat.toolCallLine.wait_ending')
               : i18nT('pages.chat.toolCallLine.wait_end_now')}
           </button>
+          {/* askAgent on: a transcript row holds no draft of its own, the
+              composer draft is persisted per slot, and an in-chat hand-off
+              opens a fresh slot rather than navigating away. */}
+          <ErrorNotice variant="inline" message={endWaitError} askAgent testId="wait-end-error" />
         </div>
       </StatusRow>
 
