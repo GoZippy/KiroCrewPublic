@@ -481,6 +481,22 @@ jobs:
           # away dies on a named timeout instead of mid-call on an expired
           # token, which reads as a model failure and buries the real cause.
           PASS_WALL: 55m
+          # The provider's own refusal line, verbatim from the CLI's error
+          # output including its line-leading "ERROR: " prefix. A refusal and
+          # a crash both arrive as rc != 0 or an empty pass file, but they
+          # mean opposite things: a crash is fixed by re-running, while a
+          # refusal is caused by what the diff IS and is empirically sticky
+          # across re-runs. This line is the only way to tell them apart. The
+          # classification below matches it ANCHORED at line start and only
+          # in the TAIL of the captured stream, because the stream also
+          # carries PR-controlled text (the prompt embeds the PR title/body,
+          # and the reviewer echoes the diff -- which, for any PR touching
+          # this file, contains this very string): an unanchored whole-stream
+          # match would let an echoed copy of the signature reclassify an
+          # ordinary crash as a refusal. The text must stay free of regex
+          # metacharacters -- it is interpolated into an anchored grep
+          # pattern.
+          REFUSAL_SIGNATURE: "ERROR: This request has been flagged for potentially high-risk cyber activity"
         # Pass 1 generates candidates; its output is never posted or gated
         # directly -- the falsification pass below emits the only verdict the
         # comment and gate consume.
@@ -501,6 +517,7 @@ jobs:
           # already `rm -f`-ed.
           rm -f codex-failed-passes
           : > codex-failed-passes
+          rm -f "$RUNNER_TEMP/codex-refused-passes"
           PROMPT=$(printf '%s\n\n%s\n' "$(cat /tmp/codex-prompt.md)" \
             "DISCOVERY PASS: inspect the full current diff and report every candidate that meets the FINDING BAR. This is candidate generation, not the final verdict.")
 
@@ -512,13 +529,28 @@ jobs:
           # credentials (zizmor github-env). The path is under RUNNER_TEMP
           # because the manifest that produced it was materialized from the
           # BASE commit, not from this checkout -- see "Install review CLI".
+          #
+          # The CLI's combined stream is tee'd into RUNNER_TEMP (never the
+          # checkout, so a PR cannot plant a symlink at its name) because a
+          # failed pass is classified below by the provider's own words --
+          # only the captured output can tell a refusal from a crash.
           timeout "$PASS_WALL" \
             "$RUNNER_TEMP/review-cli/node_modules/.bin/codex" exec \
             --sandbox read-only \
             --output-last-message "codex-pass-1.md" \
-            "$PROMPT" || rc=$?
+            "$PROMPT" 2>&1 | tee "$RUNNER_TEMP/codex-pass-1-log.txt" || rc=$?
           if [ "$rc" -ne 0 ] || [ ! -s codex-pass-1.md ]; then
-            echo "::warning::GPT 5.6 review pass 1 did not complete (exit ${rc}); the verdict will fail closed."
+            # Anchored + tail-scoped on purpose: the provider emits the
+            # refusal line at column 0 as the stream's final act, while an
+            # echoed copy of the signature (a diff hunk, quoted prose) is
+            # neither line-leading nor reliably last. The 4000-byte tail fits
+            # a single pipe buffer, so the grep cannot SIGPIPE the tail.
+            if tail -c 4000 "$RUNNER_TEMP/codex-pass-1-log.txt" | grep -q "^$REFUSAL_SIGNATURE"; then
+              echo "::warning::GPT 5.6 review pass 1 was refused by the provider (exit ${rc}); the verdict will name the refusal instead of advising a re-run."
+              printf ' 1' >> "$RUNNER_TEMP/codex-refused-passes"
+            else
+              echo "::warning::GPT 5.6 review pass 1 did not complete (exit ${rc}); the verdict will fail closed."
+            fi
             printf ' 1' >> codex-failed-passes
           fi
 
@@ -551,6 +583,11 @@ jobs:
           DISCOVERY_OUTPUT_MAX_BYTES: "50000"
           PASS_WALL: 55m
           HEAD: ${{ github.event.pull_request.head.sha }}
+          # Same signature and same anchored/tail-scoped matching as the
+          # discovery pass: a failed pass carrying it was REFUSED, not
+          # crashed, and the verdict assembly below reports that as its own
+          # terminal state.
+          REFUSAL_SIGNATURE: "ERROR: This request has been flagged for potentially high-risk cyber activity"
         # Pass 2 tries to KILL pass 1's candidates and emits the verdict. Both
         # calls are required: if either failed, no verdict is published and the
         # gate fails closed.
@@ -601,25 +638,64 @@ jobs:
 
           rm -f codex-pass-2.md
           rc=0
+          # tee'd into RUNNER_TEMP for the same reason as pass 1: the captured
+          # stream is what classifies a failed pass as refused vs crashed.
           timeout "$PASS_WALL" \
             "$RUNNER_TEMP/review-cli/node_modules/.bin/codex" exec \
             --sandbox read-only \
             --output-last-message "codex-pass-2.md" \
-            "$PROMPT" || rc=$?
+            "$PROMPT" 2>&1 | tee "$RUNNER_TEMP/codex-pass-2-log.txt" || rc=$?
           if [ "$rc" -ne 0 ] || [ ! -s codex-pass-2.md ]; then
-            echo "::warning::GPT 5.6 review pass 2 did not complete (exit ${rc}); the verdict will fail closed."
+            if tail -c 4000 "$RUNNER_TEMP/codex-pass-2-log.txt" | grep -q "^$REFUSAL_SIGNATURE"; then
+              echo "::warning::GPT 5.6 review pass 2 was refused by the provider (exit ${rc}); the verdict will name the refusal instead of advising a re-run."
+              printf ' 2' >> "$RUNNER_TEMP/codex-refused-passes"
+            else
+              echo "::warning::GPT 5.6 review pass 2 did not complete (exit ${rc}); the verdict will fail closed."
+            fi
             failed_passes="${failed_passes} 2"
           fi
 
+          refused_passes="$(cat "$RUNNER_TEMP/codex-refused-passes" 2>/dev/null || true)"
+          refused="false"
           if [ -n "$failed_passes" ]; then
-            {
-              echo "> **Incomplete review:** pass(es)${failed_passes} did not complete."
-              echo
-              echo "The pass-2 verdict was not published because both calls are required. Re-run the workflow for a complete review."
-            } > codex-review-output.md
+            if [ -n "$refused_passes" ]; then
+              # A refusal is not a crash: the provider declined because of
+              # what the reviewed content IS, and measured refusals of this
+              # class recur identically across re-runs, so advising a re-run
+              # points the operator at a remedy that has never been observed
+              # to work. Publish a distinct terminal state -- it still carries
+              # no [GPT-REVIEWED] marker, so the gate still fails closed and a
+              # declined review can never read as an approval -- that names
+              # the refusal and routes to human adjudication. The refusal
+              # dominates a mixed failure (one pass refused, the other
+              # crashed) because the adjudication route is the reliable exit
+              # either way, while a re-run only helps if the refusal does not
+              # recur.
+              refused="true"
+              {
+                echo "> **Reviewer refused:** the provider declined to review this diff (pass(es)${refused_passes})."
+                echo
+                echo "The refusal is caused by the reviewed content, not by a transient failure, so a re-run is very unlikely to produce a verdict. A declined review is not an approval: a repository writer must adjudicate with \`/ai-review override gpt $HEAD: <one-sentence reason>\`."
+              } > codex-review-output.md
+            else
+              {
+                echo "> **Incomplete review:** pass(es)${failed_passes} did not complete."
+                echo
+                echo "The pass-2 verdict was not published because both calls are required. Re-run the workflow for a complete review."
+              } > codex-review-output.md
+            fi
           else
             cp codex-pass-2.md codex-review-output.md
           fi
+          # The refusal classification travels as a step OUTPUT, never by
+          # re-grepping codex-review-output.md downstream: on the clean path
+          # that file is verbatim model prose, so a review that merely QUOTED
+          # a refusal phrase (say, while reviewing this workflow) would
+          # otherwise reclassify a completed verdict. There is deliberately
+          # no refusal marker in the body itself — the prose names the
+          # refusal for human readers, and a marker nothing may parse would
+          # only invite a future step to start grepping model prose for it.
+          echo "refused=$refused" >> "$GITHUB_OUTPUT"
 
           # Gate the adjudication pass below on the verdict THIS step produced,
           # so a clean PR never pays for it. `[BLOCK-MERGE] $HEAD` -- the same
@@ -1108,6 +1184,7 @@ jobs:
           HUMAN_OVERRIDE: ${{ steps.human_override.outputs.active }}
           OVERRIDE_ACTOR: ${{ steps.human_override.outputs.actor }}
           OVERRIDE_SOURCE: ${{ steps.human_override.outputs.source }}
+          REFUSED: ${{ steps.gpt_pass2.outputs.refused }}
           ADJ_DECISION: ${{ steps.adj.outputs.decision }}
           ADJ_NOTE: ${{ steps.adj.outputs.note }}
         run: |
@@ -1120,6 +1197,20 @@ jobs:
             verdict="✅ human override accepted"
             source_url="https://github.com/$REPO/pull/$PR#issuecomment-$OVERRIDE_SOURCE"
             sentence="Human judgment by @$OVERRIDE_ACTOR overrides the GPT 5.6 finding for \`$HEAD\`; [the recorded reason]($source_url) is authoritative for this commit."
+          elif [ "$REFUSED" = "true" ]; then
+            # The provider REFUSED this diff -- a terminal state distinct from
+            # "incomplete": the refusal is caused by the reviewed content, so
+            # advising a re-run would prescribe a remedy that has never been
+            # observed to work for this class. The gate stays red either way;
+            # this comment is what lets a maintainer reaching for /ai-review
+            # override see that the reviewer refused rather than failed.
+            # $REFUSED is the verdict assembly's step output, never a grep of
+            # the review body: on the clean path that body is model prose, and
+            # a review merely QUOTING the refusal marker must not reclassify a
+            # completed verdict.
+            kind="refused"
+            verdict="⛔ reviewer refused this diff"
+            sentence="The provider declined to review \`$HEAD\`; the refusal is caused by the diff's own content, so a re-run is very unlikely to produce a verdict. A declined review is not an approval — a repository writer must adjudicate with \`/ai-review override gpt $HEAD: <one-sentence reason>\`."
           elif [ -s codex-review-output.md ] \
             && grep -Fq "[GPT-REVIEWED] $HEAD" codex-review-output.md; then
             # Blocked IFF the contract marker is present. There is deliberately
@@ -1170,6 +1261,8 @@ jobs:
               echo "</details>"
             elif [ "$kind" = "incomplete" ]; then
               echo "_See the GPT 5.6 Review job logs; this commit has no completed GPT verdict._"
+            elif [ "$kind" = "refused" ]; then
+              echo "_The refusal text is in the GPT 5.6 Review job logs. It is caused by the diff's content: re-runs have not been observed to clear this class of refusal._"
             else
               echo "_The model was not re-run because an authorized human decision supersedes it._"
             fi
@@ -1225,7 +1318,7 @@ jobs:
             || : > "${RUNNER_TEMP:-/tmp}/codex-existing-comment.md"
 
           if [ -n "$existing" ] && [ "$existing" != "null" ]; then
-            if [ "$kind" = "incomplete" ] \
+            if { [ "$kind" = "incomplete" ] || [ "$kind" = "refused" ]; } \
               && grep -Fq "[GPT-REVIEWED]" "${RUNNER_TEMP:-/tmp}/codex-existing-comment.md"; then
               # Visibility invariant (#8292): a verdict that exists never
               # becomes invisible. The REST comments API exposes no edit
@@ -1234,13 +1327,20 @@ jobs:
               # GraphQL userContentEdits where no reader or tool looks. Keep
               # the existing verdict and prepend ONE dated notice, replacing
               # any notice a previous incomplete run left so they never stack.
-              # Scope: ONLY marker-absent (incomplete) bodies are caught here;
-              # override/blocked/clear kinds still replace the comment, and
-              # "Gate on findings" below stays fail-closed for $HEAD.
+              # Scope: ONLY verdict-less bodies (incomplete and refused) are
+              # caught here; override/blocked/clear kinds still replace the
+              # comment, and "Gate on findings" below stays fail-closed for
+              # $HEAD. The refused notice differs in exactly the way the
+              # states differ: it says re-running is futile instead of
+              # advising one.
               {
                 echo "$MARKER"
                 echo "<!-- codex-stale-notice-begin -->"
-                echo "> ⚠️ **Stale verdict notice ($(date -u +'%Y-%m-%d %H:%M UTC')):** a later GPT 5.6 run did not produce a completed verdict for \`$HEAD\`; the verdict below is from an earlier completed run. Inspect the GPT 5.6 Review job logs and re-run the workflow, or have a repository writer comment \`/ai-review override gpt $HEAD: <one-sentence reason>\`."
+                if [ "$kind" = "refused" ]; then
+                  echo "> ⚠️ **Stale verdict notice ($(date -u +'%Y-%m-%d %H:%M UTC')):** the provider REFUSED to review \`$HEAD\` — the refusal is caused by the diff's own content, so a re-run is very unlikely to produce a fresh verdict. The verdict below is from an earlier completed run on an OLDER commit. A repository writer must adjudicate: \`/ai-review override gpt $HEAD: <one-sentence reason>\`."
+                else
+                  echo "> ⚠️ **Stale verdict notice ($(date -u +'%Y-%m-%d %H:%M UTC')):** a later GPT 5.6 run did not produce a completed verdict for \`$HEAD\`; the verdict below is from an earlier completed run. Inspect the GPT 5.6 Review job logs and re-run the workflow, or have a repository writer comment \`/ai-review override gpt $HEAD: <one-sentence reason>\`."
+                fi
                 echo "<!-- codex-stale-notice-end -->"
                 echo ""
                 # Strip the leading marker and any previous notice block. Both
@@ -1258,7 +1358,7 @@ jobs:
               } > "${RUNNER_TEMP:-/tmp}/codex-merged-comment.md"
               gh api --method PATCH "repos/$REPO/issues/comments/$existing" \
                 --field body="$(cat "${RUNNER_TEMP:-/tmp}/codex-merged-comment.md")" >/dev/null || true
-              echo "Preserved GPT 5.6 verdict in comment #$existing; prepended incomplete-run notice for $HEAD"
+              echo "Preserved GPT 5.6 verdict in comment #$existing; prepended $kind-run notice for $HEAD"
             else
               gh api --method PATCH "repos/$REPO/issues/comments/$existing" \
                 --field body="$(cat "${RUNNER_TEMP:-/tmp}/codex-comment.md")" >/dev/null || true
@@ -1269,13 +1369,25 @@ jobs:
             echo "Created new GPT 5.6 comment"
           fi
 
-      # Fail-CLOSED gate on two SHA-scoped markers:
+      # Fail-CLOSED gate on SHA-scoped markers:
       #   - [GPT-REVIEWED] <sha> — the review ran and produced a verdict for
       #     THIS commit. Absent => fail rather than silently pass.
       #   - [BLOCK-MERGE] <sha>    — it additionally found a CLOSED-BLOCKING-LIST
       #     issue. This is the ONLY thing that blocks the merge, and the ONLY
       #     thing that can relax it is a fully reconciled clearance from the
       #     adjudication stage above (steps.adj.outputs.decision == 'cleared').
+      #
+      # A provider REFUSAL also fails, but as its own terminal state, read
+      # from the verdict assembly's `refused` step OUTPUT: the refusal is
+      # caused by the diff's content, so its failure message must not advise
+      # the re-run a crash message advises — re-runs have not been observed
+      # to clear this class — and must name human adjudication as the
+      # workable remedy. There is deliberately NO refusal marker in the
+      # verdict body: the body on the clean path is model prose, and a
+      # marker would invite exactly the prose-grepping this output exists to
+      # prevent. The assembly only ever emits refused=true on a run whose
+      # body it wrote itself, with no [GPT-REVIEWED] marker, so a refusal
+      # can never read as a completed review.
       #
       # The old "anchored Severity: HIGH without [BLOCK-MERGE]" fail-closed
       # backstop is GONE. Because the prompt required a severity token on every
@@ -1290,6 +1402,7 @@ jobs:
           ACTOR: ${{ github.actor }}
           HUMAN_OVERRIDE: ${{ steps.human_override.outputs.active }}
           OVERRIDE_ACTOR: ${{ steps.human_override.outputs.actor }}
+          REFUSED: ${{ steps.gpt_pass2.outputs.refused }}
           ADJ_DECISION: ${{ steps.adj.outputs.decision }}
           ADJ_NOTE: ${{ steps.adj.outputs.note }}
         run: |
@@ -1307,6 +1420,17 @@ jobs:
           fi
           reviewed="[GPT-REVIEWED] $HEAD"
           blocked="[BLOCK-MERGE] $HEAD"
+          # A refusal is its own terminal state, distinct from a crash. Still
+          # fail CLOSED — a declined review is not an approval, and passing
+          # here would turn the provider's content filter into a bypass of the
+          # repo's own review requirement — but name the true cause and the
+          # remedy that can work. $REFUSED is the verdict assembly's step
+          # output for THIS run, so a marker quoted inside an old or completed
+          # verdict body can never trip this branch.
+          if [ "$REFUSED" = "true" ]; then
+            echo "::error::GPT 5.6 REFUSED to review $HEAD: the provider declined the request because of the diff's own content, and re-runs have not been observed to clear this class of refusal. Failing closed — a declined review is not an approval. This needs human adjudication: a repository writer can comment '/ai-review override gpt $HEAD: <one-sentence reason>'."
+            exit 1
+          fi
           # Positive proof the review ran for THIS commit (fail closed).
           if ! grep -Fq "$reviewed" codex-review-output.md; then
             echo "::error::GPT 5.6 review did not complete for $HEAD (no [GPT-REVIEWED] marker). Failing closed — re-run the workflow or inspect the GPT 5.6 review step logs."
