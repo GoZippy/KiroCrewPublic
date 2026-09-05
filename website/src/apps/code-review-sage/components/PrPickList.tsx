@@ -20,6 +20,7 @@ import EmptyState from './EmptyState'
 import ListSkeleton from './ListSkeleton'
 
 import { i18nT } from '../../../i18n/t'
+import ErrorNotice from '../../../components/ErrorNotice'
 /** Reviewing / reviewed / stale / new, as a single honest chip. `reviewing`
  *  outranks the rest: it is what is happening to this PR right now. */
 function PrStateChip({ pr, reviewing }: { pr: RepoPr; reviewing?: boolean }) {
@@ -117,10 +118,9 @@ function PasteLinks() {
           {i18nT('apps.codeReviewSage.components.prPickList.cancel')}
         </button>
       </div>
+      {/* No hand-off: the pasted-links textarea above is unsaved. */}
       {startReviewLinks.error && (
-        <div className="text-[11.5px] text-danger">
-          {(startReviewLinks.error as Error).message}
-        </div>
+        <ErrorNotice message={(startReviewLinks.error as Error).message} variant="inline" />
       )}
     </div>
   )
@@ -280,16 +280,12 @@ export default function PrPickList() {
           <div className="text-[11.5px] text-muted">{startRepoReview.data?.message}</div>
         )}
         {startReview.error && (
-          <div className="text-[11.5px] text-danger">
-            {(startReview.error as Error).message}
-          </div>
+          <ErrorNotice message={(startReview.error as Error).message} variant="inline" askAgent />
         )}
         {startRepoReview.error && (
-          <div className="text-[11.5px] text-danger">
-            {(startRepoReview.error as Error).message}
-          </div>
+          <ErrorNotice message={(startRepoReview.error as Error).message} variant="inline" askAgent />
         )}
-        {prsError && <div className="text-[11.5px] text-danger">{prsError.message}</div>}
+        {prsError && <ErrorNotice message={prsError.message} variant="inline" askAgent />}
       </div>
 
       <div className="relative flex-1 min-h-0">

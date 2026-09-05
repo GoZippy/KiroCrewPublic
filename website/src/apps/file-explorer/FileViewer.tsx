@@ -1,7 +1,8 @@
-import { FileText, AlertTriangle, FileQuestion, RefreshCw, Download, Copy, ExternalLink, FolderOpen, MoreHorizontal, ShieldAlert } from 'lucide-react'
+import { FileText, FileQuestion, RefreshCw, Download, Copy, ExternalLink, FolderOpen, MoreHorizontal, ShieldAlert } from 'lucide-react'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import MarkdownRenderer, { BasePathCtx } from '../../components/MarkdownRenderer'
 import { EmptyState, Skeleton } from '../../components/ui'
+import ErrorNotice from '../../components/ErrorNotice'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '../../components/ui/dropdown-menu'
@@ -57,7 +58,12 @@ export default function FileViewer({ filePath, fileMeta, content, loading, error
   }
   if (loading) return <Skeleton className="h-full w-full" />
   if (error) {
-    return <EmptyState icon={<AlertTriangle size={22} style={{ color: 'var(--danger)' }} />} title={error} />
+    // A read failure, not an empty state: the viewer holds nothing to lose.
+    return (
+      <div className="p-4">
+        <ErrorNotice message={error} askAgent />
+      </div>
+    )
   }
   if (!fileMeta) return null
 
