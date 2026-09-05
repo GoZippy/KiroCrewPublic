@@ -363,14 +363,13 @@ async def api_connections_mint(request: web.Request) -> web.Response:
     if adopted is not None:
         # ONE event, outcome ``ok``: unlike the cold path below, this request both
         # starts and finishes here, so a ``started`` with no completion would leave the
-        # audit trail showing a mint that never ended.
-        await asyncio.to_thread(
-            lambda: sel().log_api_access(
-                caller="dashboard",
-                operation="connections_mint",
-                outcome="ok",
-                resources=f"provider:{slug} reason=adopted_warm_mint",
-            )
+        # audit trail showing a mint that never ended. A bare enqueue — SEL is
+        # warmed at gateway startup (sel.warm_sel_singleton, #8608).
+        sel().log_api_access(
+            caller="dashboard",
+            operation="connections_mint",
+            outcome="ok",
+            resources=f"provider:{slug} reason=adopted_warm_mint",
         )
         # ``waiting`` rather than ``minting``: the URL exists already. The card polls
         # the mint state either way, and that poll now finds it on the first read.
@@ -392,20 +391,15 @@ async def api_connections_mint(request: web.Request) -> web.Response:
     _mint_tasks.add(task)
     task.add_done_callback(_mint_tasks.discard)
 
-    # Off the loop: only the append is queued to SEL's writer thread. The FIRST
-    # sel() of a process CONSTRUCTS the log -- trust-dir creation, key validation,
-    # and on Windows the owner-only DACL on the key file -- and this handler runs
-    # BEFORE the audit
-    # middleware's own call (that one logs the response), so on a fresh gateway
-    # whose first state-changing request is a Connect click it would land here and
-    # stall every other request. Same reasoning as server._audit_denied.
-    await asyncio.to_thread(
-        lambda: sel().log_api_access(
-            caller="dashboard",
-            operation="connections_mint",
-            outcome="started",
-            resources=f"provider:{slug}",
-        )
+    # A bare enqueue (plus the writer thread's one-time start on the process's
+    # first log()): the construction cost this handler used to dodge (the
+    # FIRST sel() of a process) is paid once at gateway startup instead
+    # (sel.warm_sel_singleton, #8608).
+    sel().log_api_access(
+        caller="dashboard",
+        operation="connections_mint",
+        outcome="started",
+        resources=f"provider:{slug}",
     )
     return web.json_response({"ok": True, "slug": slug, "state": "minting", "token": token})
 
@@ -581,17 +575,14 @@ async def api_connections_cancel(request: web.Request) -> web.Response:
 
     dropped = await cancel_mint(slug, token)
 
-    # Off the loop: the FIRST sel() of a process constructs the log (trust-dir
-    # creation, key validation, on Windows the owner-only DACL). Same reasoning
-    # as api_connections_mint above.
-    await asyncio.to_thread(
-        lambda: sel().log_api_access(
-            caller="dashboard",
-            operation="connections_cancel",
-            outcome="ok",
-            source="dashboard",
-            resources=f"provider:{slug} dropped={dropped}",
-        )
+    # A bare enqueue: SEL is warmed at gateway startup (sel.warm_sel_singleton,
+    # #8608), so no per-site thread hop is needed.
+    sel().log_api_access(
+        caller="dashboard",
+        operation="connections_cancel",
+        outcome="ok",
+        source="dashboard",
+        resources=f"provider:{slug} dropped={dropped}",
     )
     return web.json_response({"ok": True, "slug": slug, "dropped": dropped})
 
@@ -689,24 +680,22 @@ async def api_connections_disconnect(request: web.Request) -> web.Response:
             if label not in surviving:
                 surviving.append(label)
 
-    # Off the loop: the FIRST sel() of a process constructs the log. Same
-    # reasoning as api_connections_cancel above.
-    await asyncio.to_thread(
-        lambda: sel().log_api_access(
-            caller="dashboard",
-            operation="connections_disconnect",
-            # No `or grant_shared_with` escape any more: only ATTEMPTED pairs are
-            # re-stat'd, so a survivor is always a failed unlink rather than a
-            # deliberate keep that had to be excused.
-            outcome="partial" if surviving else "ok",
-            source="dashboard",
-            resources=(
-                f"provider:{slug} artifacts_removed={len(removed)} "
-                f"surviving={len(surviving)} entry_removed={scope.entry_removed} "
-                f"grant_shared={len(scope.grant_shared_with)} "
-                f"census_incomplete={scope.census_incomplete}"
-            ),
-        )
+    # A bare enqueue: SEL is warmed at gateway startup (sel.warm_sel_singleton,
+    # #8608).
+    sel().log_api_access(
+        caller="dashboard",
+        operation="connections_disconnect",
+        # No `or grant_shared_with` escape any more: only ATTEMPTED pairs are
+        # re-stat'd, so a survivor is always a failed unlink rather than a
+        # deliberate keep that had to be excused.
+        outcome="partial" if surviving else "ok",
+        source="dashboard",
+        resources=(
+            f"provider:{slug} artifacts_removed={len(removed)} "
+            f"surviving={len(surviving)} entry_removed={scope.entry_removed} "
+            f"grant_shared={len(scope.grant_shared_with)} "
+            f"census_incomplete={scope.census_incomplete}"
+        ),
     )
     return web.json_response(
         {
@@ -793,15 +782,13 @@ async def api_connections_premint(request: web.Request) -> web.Response:
     _premint_tasks.add(task)
     task.add_done_callback(_premint_tasks.discard)
 
-    # Off the loop for the same reason as api_connections_mint: this handler can be
-    # the first state-changing request a fresh gateway serves, and the FIRST sel()
-    # of a process constructs the log.
-    await asyncio.to_thread(
-        lambda: sel().log_api_access(
-            caller="dashboard",
-            operation="connections_premint",
-            outcome="started",
-            resources=f"providers:{len(slugs)}",
-        )
+    # A bare enqueue, same as api_connections_mint: the first-touch construction
+    # this used to dodge is paid once at gateway startup (sel.warm_sel_singleton,
+    # #8608).
+    sel().log_api_access(
+        caller="dashboard",
+        operation="connections_premint",
+        outcome="started",
+        resources=f"providers:{len(slugs)}",
     )
     return web.json_response({"ok": True, "preminting": slugs})

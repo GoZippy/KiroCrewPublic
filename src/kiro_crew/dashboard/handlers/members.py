@@ -75,24 +75,22 @@ async def _deny_app_caller(request: web.Request, operation: str) -> web.Response
     404 rather than 403, matching the slot-access denials: a distinct status
     would confirm the surface exists to a caller that may not know about it.
 
-    The audit is offloaded with the ``_sel()`` accessor INSIDE the thread: on
-    a fresh gateway the first SEL touch performs synchronous filesystem
-    initialization (HMAC key load/create, chain-head read), which must never
-    run on the event loop. The fast allow path (no app token) stays on-loop
-    with no thread hop.
+    The audit is a bare enqueue: SEL is warmed at gateway startup
+    (``sel.warm_sel_singleton``), so the first-touch filesystem
+    initialization this call site used to offload never runs here (#8608).
+    Guarded because a FAILED warm leaves construction to retry on this
+    thread and possibly raise.
     """
     request_app = request.get("app", "")
     if not request_app:
         return None
     try:
-        await asyncio.to_thread(
-            lambda: _sel().log_api_access(
-                caller=request_app,
-                operation=operation,
-                outcome="denied",
-                source="app_isolation",
-                error="apps cannot access member threads",
-            )
+        _sel().log_api_access(
+            caller=request_app,
+            operation=operation,
+            outcome="denied",
+            source="app_isolation",
+            error="apps cannot access member threads",
         )
     except Exception:  # pragma: no cover - audit must never change the outcome
         logger.debug("SEL audit for %s app denial failed", operation, exc_info=True)
@@ -283,15 +281,13 @@ async def api_member_thread(request: web.Request) -> web.Response:
             # untouched (re-entrant), and let the user resolve it in the
             # crew manager.
             try:
-                await asyncio.to_thread(
-                    lambda: _sel().log_api_access(
-                        caller=request.remote or "",
-                        operation="member_thread_open",
-                        outcome="denied",
-                        source="member_pin",
-                        resources=f"slug={slug}",
-                        error="binding names a crew outside the slug's owners",
-                    )
+                _sel().log_api_access(
+                    caller=request.remote or "",
+                    operation="member_thread_open",
+                    outcome="denied",
+                    source="member_pin",
+                    resources=f"slug={slug}",
+                    error="binding names a crew outside the slug's owners",
                 )
             except Exception:  # pragma: no cover - audit must never change the outcome
                 logger.debug("SEL audit for member_pin denial failed", exc_info=True)
@@ -322,15 +318,13 @@ async def api_member_thread(request: web.Request) -> web.Response:
             _history_exists = await asyncio.to_thread(_log.has_log, _history_key)
             if _history_exists:
                 try:
-                    await asyncio.to_thread(
-                        lambda: _sel().log_api_access(
-                            caller=request.remote or "",
-                            operation="member_thread_open",
-                            outcome="denied",
-                            source="member_pin",
-                            resources=f"slug={slug}",
-                            error="orphan history: binding gone, transcript survives",
-                        )
+                    _sel().log_api_access(
+                        caller=request.remote or "",
+                        operation="member_thread_open",
+                        outcome="denied",
+                        source="member_pin",
+                        resources=f"slug={slug}",
+                        error="orphan history: binding gone, transcript survives",
                     )
                 except Exception:  # pragma: no cover - audit must never change the outcome
                     logger.debug("SEL audit for member_pin denial failed", exc_info=True)
@@ -390,15 +384,13 @@ async def api_member_thread(request: web.Request) -> web.Response:
         # resolves it in the crew manager (restore the name, or delete the
         # thread), and until then the thread refuses to speak as anyone else.
         try:
-            await asyncio.to_thread(
-                lambda: _sel().log_api_access(
-                    caller=request.remote or "",
-                    operation="member_thread_open",
-                    outcome="denied",
-                    source="member_pin",
-                    resources=f"slug={slug}",
-                    error="live slot pinned to a crew the registry no longer names",
-                )
+            _sel().log_api_access(
+                caller=request.remote or "",
+                operation="member_thread_open",
+                outcome="denied",
+                source="member_pin",
+                resources=f"slug={slug}",
+                error="live slot pinned to a crew the registry no longer names",
             )
         except Exception:  # pragma: no cover - audit must never change the outcome
             logger.debug("SEL audit for member_pin denial failed", exc_info=True)

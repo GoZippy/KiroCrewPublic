@@ -1023,15 +1023,15 @@ async def _promote_pending_grant(
         )
     # The commit landed and the promoting write already consumed the pending
     # request, so the grant is fully active with nothing left to clear.
+    # A bare enqueue: SEL is warmed at gateway startup (sel.warm_sel_singleton,
+    # #8608); guarded because a FAILED warm leaves construction to retry here.
     try:
-        await asyncio.to_thread(
-            lambda: _sel().log_api_access(
-                caller="dashboard",
-                operation="cron.secret_request_approved",
-                outcome="allowed",
-                source="dashboard",
-                resources=f"{job_id}:{','.join(sorted(updated.secret_env))}",
-            )
+        _sel().log_api_access(
+            caller="dashboard",
+            operation="cron.secret_request_approved",
+            outcome="allowed",
+            source="dashboard",
+            resources=f"{job_id}:{','.join(sorted(updated.secret_env))}",
         )
     except Exception:
         logger.debug("SEL logging failed for cron secret approve", exc_info=True)
@@ -1068,15 +1068,13 @@ async def api_cron_secret_grant(request: web.Request) -> web.Response:
     # to record.
     if request.get("internal_auth") is True:
         try:
-            await asyncio.to_thread(
-                lambda: _sel().log_api_access(
-                    caller=str(request.get("user") or "internal"),
-                    operation="cron.secret_grant",
-                    outcome="denied",
-                    source="dashboard",
-                    resources=request.match_info.get("job_id", ""),
-                    error="operator_only",
-                )
+            _sel().log_api_access(
+                caller=str(request.get("user") or "internal"),
+                operation="cron.secret_grant",
+                outcome="denied",
+                source="dashboard",
+                resources=request.match_info.get("job_id", ""),
+                error="operator_only",
             )
         except Exception:  # pragma: no cover - audit must never change the outcome
             logger.debug("SEL audit for machine secret-grant denial failed", exc_info=True)

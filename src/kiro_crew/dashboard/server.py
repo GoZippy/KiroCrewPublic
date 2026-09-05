@@ -178,7 +178,7 @@ from kiro_crew.safety_override import (
     take_dropped_grant,
 )
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
-from kiro_crew.sel import sel
+from kiro_crew.sel import sel, warm_sel_singleton
 from kiro_crew.skill_usage import register_skill_read_observer
 from kiro_crew.skills import SkillsLoader, set_pending_consumed_hook, set_pending_staged_hook
 from kiro_crew.tunnel.setup import setup_tunnel
@@ -459,39 +459,39 @@ _PRE_AUDIT_DENY_STATUSES = frozenset({401, 403})
 
 
 async def _audit_denied(caller: str, request: web.Request, error: str) -> None:
-    """Record a middleware refusal in the SEL, off the event loop, best-effort.
+    """Record a middleware refusal in the SEL, best-effort.
 
     Shared by every middleware that denies BEFORE ``sel_audit_middleware`` runs
     (that one is registered inner to them, so a bare raise produces a 403 that
     appears nowhere in the audit log). One helper rather than per-site calls
-    because both properties below are easy to omit at a new deny site and
+    because the property below is easy to omit at a new deny site and
     invisible when omitted:
 
-    * OFF THE LOOP — ``log_api_access`` only enqueues, but the first ``sel()``
-      of a process CONSTRUCTS the log: trust-dir creation, key validation, and
-      on Windows the owner-only DACL on the key file. A fresh
-      dashboard whose first state-changing request is cross-origin would run
-      that synchronously on the event loop and stall every other request.
     * BEST-EFFORT — a trust root too short to sign the chain makes construction
       raise, and an unguarded write would turn the refusal into a 500: losing
       the denial in order to report it.
 
+    No thread hop: the SEL singleton is warmed at startup
+    (:func:`kiro_crew.sel.warm_sel_singleton`, awaited by both start paths
+    before the middleware chain is built), so ``log_api_access`` here only
+    enqueues to the writer thread (after its one-time start on first
+    ``log()``) (#8608). The guard stays because a FAILED
+    warm leaves construction to retry on this thread and possibly raise.
+
     Calling this CLAIMS the request (:func:`origin.mark_audit_claimed`) so the
     deny-audit boundary outer to every barrier does not record the same refusal
     a second time. The claim is set unconditionally, before the write: a write
-    that failed here fails identically in the boundary, so a second doomed
-    thread hop buys nothing.
+    that failed here fails identically in the boundary, so retrying in the
+    boundary buys nothing.
     """
     mark_audit_claimed(request)
     try:
-        await asyncio.to_thread(
-            lambda: sel().log_api_access(
-                caller=caller,
-                operation=f"{request.method} {request.path}",
-                outcome="denied",
-                resources=request.path,
-                error=error,
-            )
+        sel().log_api_access(
+            caller=caller,
+            operation=f"{request.method} {request.path}",
+            outcome="denied",
+            resources=request.path,
+            error=error,
         )
     except Exception:
         logger.warning("Failed to log a middleware denial to SEL", exc_info=True)
@@ -3632,6 +3632,13 @@ async def start_dashboard(
     # I/O lands on the loop on the first auth op.
     await warm_auth_singletons()
 
+    # Warm the SecurityEventLog singleton off the loop before any handler or
+    # middleware can be its first touch, so a first ``log_api_access`` is a
+    # non-blocking enqueue on every path — call sites need no per-site
+    # ``asyncio.to_thread`` hop (#8608). Best-effort inside the helper: a
+    # failed warm never blocks readiness.
+    await warm_sel_singleton()
+
     # Explicit middleware ordering — self-documenting and immune to future insertions
     app.middlewares[:] = [
         # Outermost: privacy-safe per-route latency (rec #1). Times the FULL
@@ -4436,6 +4443,11 @@ async def start_api_server(
     # Warm the auth singletons off the event loop before building the chain
     # (parity with start_dashboard) so no blocking key-file I/O hits the loop.
     await warm_auth_singletons()
+
+    # Warm the SecurityEventLog singleton off the loop (parity with
+    # start_dashboard) so the first audit on this entrypoint is also a
+    # non-blocking enqueue, never an on-loop ``_init_locked`` (#8608).
+    await warm_sel_singleton()
 
     # Explicit ordering mirrors start_dashboard: latency → deny-audit → host →
     # csrf → token → audit.

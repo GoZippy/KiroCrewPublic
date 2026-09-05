@@ -4748,17 +4748,15 @@ async def api_teams_activity(request: web.Request) -> web.Response:
     source = request.remote or "unknown"
     throttled_source = "" if is_proxied_request(request) else source
     if throttled_source and webhooks.auth_throttle_blocked(throttled_source):
-        # Off the loop: the first ``sel()`` of a process CONSTRUCTS the log
-        # (trust-dir creation, key validation — blocking file IO), and this
-        # route can be the first request a fresh gateway ever serves.
-        await asyncio.to_thread(
-            lambda: _sel().log_api_access(
-                caller=source,
-                operation="teams.activity",
-                outcome="denied",
-                source="teams",
-                error="auth failures throttled",
-            )
+        # A bare enqueue: SEL is warmed at gateway startup
+        # (sel.warm_sel_singleton, #8608), so even when this route is the
+        # first request a fresh gateway serves, no construction runs here.
+        _sel().log_api_access(
+            caller=source,
+            operation="teams.activity",
+            outcome="denied",
+            source="teams",
+            error="auth failures throttled",
         )
         return web.json_response(
             {"error": "too many failed attempts", "code": "auth_throttled"}, status=429

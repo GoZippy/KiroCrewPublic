@@ -455,11 +455,12 @@ def test_every_middleware_denial_is_audited_off_the_loop() -> None:
     """Wiring pin: every middleware that refuses BEFORE ``sel_audit_middleware``
     must route its audit through the shared ``_audit_denied`` helper.
 
-    That helper owns two properties which are easy to omit at a new deny site
-    and invisible when omitted: the write runs OFF the event loop (the first
-    ``sel()`` of a process constructs the log — trust-dir creation, key
-    validation, an ``icacls`` subprocess on Windows), and it is best-effort (an
-    audit that raises must not turn the 403 into a 500).
+    That helper owns a property which is easy to omit at a new deny site and
+    invisible when omitted: the write is best-effort (an audit that raises
+    must not turn the 403 into a 500). The write itself is a direct enqueue —
+    the SEL singleton is warmed at gateway startup (``sel.warm_sel_singleton``,
+    pinned in test_sel_startup_warm.py), so the per-call thread hop the helper
+    used to carry is gone (#8608) and must not quietly return.
 
     A bare raise with no audit at all is no longer a silent failure — the
     deny-audit boundary records it by position (see the chain tests below) — so
@@ -473,9 +474,10 @@ def test_every_middleware_denial_is_audited_off_the_loop() -> None:
     from kiro_crew.dashboard import server as server_mod
 
     helper = inspect.getsource(server_mod._audit_denied)
-    assert (
-        "asyncio.to_thread" in helper
-    ), "_audit_denied no longer offloads the SEL write off the event loop"
+    assert "asyncio.to_thread" not in helper, (
+        "_audit_denied re-grew a per-call thread hop; SEL is warmed at startup "
+        "(sel.warm_sel_singleton), so log_api_access is a non-blocking enqueue"
+    )
     assert "except Exception" in helper, "_audit_denied is no longer best-effort"
 
     # Both pre-audit barriers are built by a shared factory, so the deny arms live
@@ -490,7 +492,7 @@ def test_every_middleware_denial_is_audited_off_the_loop() -> None:
         ), f"{name} has a deny arm that no longer audits via _audit_denied"
         assert 'outcome="denied"' not in src, (
             f"{name} re-grew a hand-rolled denial audit; route it through "
-            "_audit_denied so the off-loop and best-effort properties hold "
+            "_audit_denied so the best-effort property holds "
             "(sel_audit_middleware's ok/error request audit is unaffected)"
         )
 
@@ -502,7 +504,7 @@ def test_every_middleware_denial_is_audited_off_the_loop() -> None:
     ):
         assert 'outcome="denied"' not in inspect.getsource(func), (
             f"{name} re-grew a hand-rolled denial audit; route it through "
-            "_audit_denied so the off-loop and best-effort properties hold "
+            "_audit_denied so the best-effort property holds "
             "(sel_audit_middleware's ok/error request audit is unaffected)"
         )
 
@@ -617,9 +619,10 @@ async def test_a_forgetful_pre_audit_refusal_is_still_audited_by_position(
     assert denials[0]["operation"] == "GET /api/sessions"
     assert denials[0]["resources"] == "/api/sessions"
     assert "403" in denials[0]["error"]
-    # Off the loop, via the shared helper — not an inline sel() call on the
-    # event loop, which the first sel() of a process would block on.
-    assert spy.threads[0] != "MainThread"
+    # A direct enqueue on the loop thread via the shared helper — the
+    # singleton is warmed at startup (sel.warm_sel_singleton, #8608), so no
+    # per-call thread hop remains to reintroduce.
+    assert spy.threads[0] == "MainThread"
 
 
 @pytest.mark.asyncio

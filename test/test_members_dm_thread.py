@@ -1507,15 +1507,17 @@ class TestMemberActivityRoute:
 
 
 class TestDenialAuditOffload:
-    """Deny-path SEL audits must never run on the event loop (issue #8523).
+    """Deny-path SEL audits are direct enqueues since the startup warm (#8608).
 
-    On a fresh gateway the first ``_sel()`` touch performs synchronous
-    filesystem initialization (HMAC key load/create, chain-head read); a
-    denial that audits inline therefore stalls every gateway task. Each test
-    records the thread the audit actually ran on and fails if it is the
-    event-loop thread — reverting any call site to a bare
-    ``_sel().log_api_access(...)`` turns the recorded ident back into the
-    loop's and fails these.
+    The per-site ``asyncio.to_thread`` wrappers existed because a fresh
+    gateway's first ``_sel()`` touch performed synchronous filesystem
+    initialization (HMAC key load/create, chain-head read). That first touch
+    now happens once at gateway startup (``sel.warm_sel_singleton``, awaited
+    by both server start paths — pinned in test_sel_startup_warm.py), so a
+    handler-side ``log_api_access`` is a non-blocking enqueue and the thread
+    hop is gone. Each test records the thread the audit ran on and fails if
+    it is NOT the event-loop thread — re-adding a pointless per-site offload
+    turns the recorded ident back into a worker's and fails these.
     """
 
     @staticmethod
@@ -1528,7 +1530,7 @@ class TestDenialAuditOffload:
         return _RecordingSel()
 
     @pytest.mark.asyncio
-    async def test_app_denial_audit_runs_off_the_event_loop(self, tmp_path, monkeypatch):
+    async def test_app_denial_audit_runs_inline(self, tmp_path, monkeypatch):
         state = _make_state(tmp_path)
         record: dict = {}
         monkeypatch.setattr("kiro_crew.dashboard.handlers.sel", lambda: self._recording_sel(record))
@@ -1547,12 +1549,12 @@ class TestDenialAuditOffload:
         assert record["kwargs"]["outcome"] == "denied"
         assert record["kwargs"]["source"] == "app_isolation"
         assert record["kwargs"]["operation"] == "members.list"
-        # The audit — including the ``_sel()`` accessor — ran off-loop.
-        assert record["thread_ident"] != loop_ident
+        # The audit is a direct enqueue on the loop thread — no thread hop.
+        assert record["thread_ident"] == loop_ident
 
     @pytest.mark.asyncio
-    async def test_member_pin_denial_audit_runs_off_the_event_loop(self, tmp_path, monkeypatch):
-        """The pin-mismatch denial (binding names a non-owner) audits off-loop."""
+    async def test_member_pin_denial_audit_runs_inline(self, tmp_path, monkeypatch):
+        """The pin-mismatch denial (binding names a non-owner) audits inline."""
         state = _make_state(tmp_path)
         record: dict = {}
         monkeypatch.setattr("kiro_crew.dashboard.handlers.sel", lambda: self._recording_sel(record))
@@ -1567,76 +1569,18 @@ class TestDenialAuditOffload:
                 assert (await resp.json())["code"] == "member_pin_mismatch"
         assert record["kwargs"]["source"] == "member_pin"
         assert record["kwargs"]["outcome"] == "denied"
-        assert record["thread_ident"] != loop_ident
+        assert record["thread_ident"] == loop_ident
         assert not state._slots
 
-    @pytest.mark.asyncio
-    async def test_first_sel_touch_initializes_off_the_event_loop(self, tmp_path, monkeypatch):
-        """A deny-path audit that is SEL's FIRST touch initializes off-loop.
+    def test_no_members_sel_audit_is_offloaded(self):
+        """AST guard (inverted from #8523 by #8608): no ``log_api_access``
+        call in members.py hides inside an ``asyncio.to_thread`` lambda.
 
-        Uses a real ``SecurityEventLog`` against a fresh directory so the
-        first-touch work (HMAC key create, chain-head read) genuinely runs,
-        and records the thread ``_init_locked`` executes on.
-        """
-        from kiro_crew import sel as sel_mod
-
-        state = _make_state(tmp_path)
-        sel_dir = tmp_path / "sel-home"
-        init_record: dict = {}
-        real_init = sel_mod.SecurityEventLog._init_locked
-
-        def _recording_init(inst, base_dir, sync):
-            init_record["thread_ident"] = threading.get_ident()
-            return real_init(inst, base_dir, sync)
-
-        monkeypatch.setattr(sel_mod.SecurityEventLog, "_init_locked", _recording_init)
-        # sync=True keeps the append inline in the worker thread (no background
-        # writer to leak); the FIRST-TOUCH construction below is still real.
-        monkeypatch.setattr(
-            sel_mod, "sel", lambda: sel_mod.SecurityEventLog(base_dir=sel_dir, sync=True)
-        )
-        # Displace-then-RESTORE the process singleton, the ``sel_private_root``
-        # convention (that fixture itself is unusable here: it pre-builds the
-        # instance, which would consume the very first touch this test needs).
-        # The reset is immediately followed by the try so a failure can never
-        # lose ``prior_instance`` (see conftest's ordering warning).
-        prior_instance = sel_mod.SecurityEventLog._instance
-        sel_mod.SecurityEventLog._instance = None
-        sel_mod.SecurityEventLog._initialized = False
-        try:
-
-            @web.middleware
-            async def _as_app(request: web.Request, handler):
-                request["app"] = "some-app"
-                return await handler(request)
-
-            app = _make_members_app(state)
-            app.middlewares.insert(0, _as_app)
-            loop_ident = threading.get_ident()
-            with _patched_config([CREW]):
-                async with TestClient(TestServer(app)) as client:
-                    assert (await client.get("/api/members")).status == 404
-            # First touch happened HERE (singleton was reset above) …
-            assert init_record["thread_ident"] is not None
-            # … did its filesystem initialization for real …
-            assert (sel_dir / "trust" / "sel_hmac.key").is_file()
-            # … and never on the event loop.
-            assert init_record["thread_ident"] != loop_ident
-        finally:
-            # Restore the PRIOR singleton (not ``None``): leaving ``None`` would
-            # make the next default ``sel()`` mint a SECOND instance — and a
-            # second writer thread — on the worker's session-shared directory.
-            sel_mod.SecurityEventLog._instance = prior_instance
-            sel_mod.SecurityEventLog._initialized = False
-
-    def test_every_members_sel_audit_is_offloaded(self):
-        """AST guard: no ``log_api_access`` call in members.py runs on-loop.
-
-        Every such call — regardless of how the receiver is spelled
-        (``_sel().log_api_access``, a hoisted ``s = _sel()``, a module-level
-        ``sel()``) — must sit inside a lambda handed to ``asyncio.to_thread``,
-        covering the sites the thread-ident tests do not exercise individually
-        (orphan-history, live-slot mismatch) and any site added later.
+        The startup warm makes a post-init ``log_api_access`` a non-blocking
+        enqueue, so a per-site thread hop is pure overhead — an extra
+        suspension point and a worker dispatch per denial. A future site that
+        genuinely needs a synchronous write (``critical=True``) must offload
+        AND adjust this guard with that reasoning.
         """
         import ast
         import inspect
@@ -1665,5 +1609,9 @@ class TestDenialAuditOffload:
             and node.func.attr == "log_api_access"
         ]
         assert audits, "expected log_api_access audit sites in members.py"
-        on_loop = [node.lineno for node in audits if id(node) not in offloaded]
-        assert not on_loop, f"synchronous _sel().log_api_access at lines {on_loop}"
+        wrapped = [node.lineno for node in audits if id(node) in offloaded]
+        assert not wrapped, (
+            f"to_thread-wrapped _sel().log_api_access at lines {wrapped}; SEL is "
+            "warmed at startup (sel.warm_sel_singleton), so a non-critical audit "
+            "is a direct enqueue (#8608)"
+        )
