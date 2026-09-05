@@ -4756,11 +4756,34 @@ def _output_redirect_scan(raw: str, start: int = 0) -> "tuple[str, int] | None":
     which put the stdin program back out of view. The whole substitution is one shell
     WORD, and :func:`_operand_span_end` is what carries it across the tokens it spans.
 
-    Depth counts EVERY ``(`` and ``{``, not only a ``$``-prefixed one, because a subshell
-    nested inside a substitution (``$( (true); printf /dev/null)``) closes with its own
-    ``)`` -- counting the opener but not that one would drop the depth to zero early and
-    reopen exactly the hole this closes. *raw* must therefore reach here with its
-    substitution delimiters intact; see the caller.
+    Depth counts every ``(`` and ``{`` INSIDE a substitution, but at depth zero only a
+    ``$``-prefixed opener starts one. A subshell nested inside a substitution
+    (``$( (true); printf /dev/null)``) closes with its own ``)`` -- counting the opener
+    but not that one would drop the depth to zero early and reopen exactly the hole
+    this closes. A BARE opener at depth zero is different: the tokenizer that feeds
+    this scan strips quotes (``_self_token_frames`` shlex-splits, and the caller also
+    edge-strips), so a quoted ``(`` -- one filename character to bash -- arrived here
+    bare, opened a span that never closed, and the target ran past the ``<<<`` that
+    should have ended it. The here-string was absorbed into the target and the program
+    arriving on stdin went unscanned: measured in bash, ``python 2>'a)(b'<<<'<program>'``
+    runs the program, and so does the unquoted-brace spelling ``python 2>a{b<<<'<program>'``
+    (a bare ``{`` is an ordinary filename character). An UNQUOTED bare ``(`` cannot
+    reach execution at all -- bash rejects ``2>a(b`` as a syntax error -- so at depth
+    zero the only executable meaning of a bare opener is a filename character, and the
+    walk now reads it as one. *raw* must reach here with its substitution delimiters
+    intact; see the caller.
+
+    Quote CHARACTERS in *raw* are data, never grammar. The tokenizer resolved quoting
+    before this scan runs, so a quote character that survives is literal text from a
+    spelling like ``2>"a'b"`` -- and reading it as grammar is the same defect in the
+    opposite direction: a single-quote state opened on that data quote consumed the
+    ``<<<`` to the end of the text and hid the operator (found in review, First
+    Principles lane). The walk therefore steps over quote characters like any other
+    filename character. Residuals, tracked rather than chased: a quoted ``'$('`` or
+    a quoted backtick in a filename de-quotes to the same characters as real grammar
+    and still holds or toggles a span -- indistinguishable without the quoting the
+    tokenizer already destroyed, and closing that class needs quote-preserving
+    tokenization at the frame level, not another rule here.
 
     An INDEX is returned rather than the remaining text so a word holding a chain of
     them (``>a>a>a...``) can be walked once. Re-slicing the word per operator was
@@ -4778,7 +4801,16 @@ def _output_redirect_scan(raw: str, start: int = 0) -> "tuple[str, int] | None":
         if char == "`":
             in_backtick = not in_backtick
         elif char in "({":
-            depth += 1
+            # At depth ZERO an opener counts only when `$` precedes it: `$(`, `${` and
+            # `$((` start substitutions, while a BARE `(` mid-word is never grammar in
+            # a command that runs -- unquoted it is a bash syntax error, so the only
+            # spelling that reaches execution is a quoted one, and the tokenizer that
+            # feeds this scan strips quotes (see above). A bare `{` is an ordinary
+            # filename character (measured: `python 2>a{b<<<'<program>'` runs the
+            # program and writes the file `a{b`). INSIDE a substitution every opener
+            # still counts, because a nested subshell closes with its own `)`.
+            if depth or (cut > match.end() and raw[cut - 1] == "$"):
+                depth += 1
         elif char in ")}" and depth:
             depth -= 1
         elif char in "<>" and not depth and not in_backtick:

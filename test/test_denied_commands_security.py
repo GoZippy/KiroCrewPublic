@@ -4517,6 +4517,120 @@ class TestPythonStdinDetectorStepsOverOutputRedirects:
             assert not security._is_credential_mint(cmd.lower()), cmd
 
 
+class TestOutputRedirectScanQuoting:
+    """A bare opener in a redirect target is not grammar (issue #8634).
+
+    ``_output_redirect_scan``'s span walk counted every ``(``/``{`` as a depth
+    opener. The tokenizer that feeds it resolves quoting, so a QUOTED ``(`` --
+    one filename character to bash -- arrived bare, opened a span that never
+    closed, and the target ran past the ``<<<``/``<<`` that should have ended
+    it; a bare ``{`` needs no quoting at all. The stdin program then went
+    unscanned -- the same consequence the scan's own docstring describes for a
+    glued heredoc marker. Third site of the #8150 class. The rule that closes
+    it: at depth zero only a ``$``-prefixed opener starts a substitution span.
+    Quote characters that reach the scan are DATA (the tokenizer already
+    resolved quoting), so the walk must not read them as grammar either --
+    the review-found inverse defect.
+    """
+
+    def test_the_quoted_paren_bypass_is_denied_end_to_end(self):
+        """The public consequence, through the production tokenizer (which strips
+        the quotes; the scan sees ``2>a)(b<<<``). Measured in bash: each spelling
+        runs the here-string program. On the uncorrected walk ``is_denied``
+        returned None for all three."""
+        from kiro_crew import security
+
+        prog = "'from kiro_crew.cli import main; main()'"
+        assert security.is_denied(f"python3 2>'a)(b'<<< {prog}") is not None
+        assert security.is_denied(f"python3 2>a{{b<<<{prog}") is not None
+        assert security.is_denied(f'python3 > "a{{b" <<< {prog}') is not None
+        # The balanced spelling was already denied and must stay denied.
+        assert security.is_denied(f"python3 > ab <<< {prog}") is not None
+
+    def test_a_bare_opener_in_a_dequoted_target_is_not_a_delimiter(self):
+        """The walk's own boundary, on the de-quoted form the production path
+        hands it. An unquoted bare ``(`` cannot reach execution (bash syntax
+        error), and a bare ``{`` is an ordinary filename character (measured:
+        ``python 2>a{b<<<'<program>'`` runs the program), so neither may hold
+        the span open past the operator."""
+        from kiro_crew import security
+
+        assert security._output_redirect_scan("2>a)(b<<<") == ("a)(b", 6)
+        assert security._output_redirect_scan("2>a{b<<<x") == ("a{b", 5)
+        # `$((arith))` still spans: the opener is `$`-prefixed.
+        assert security._output_redirect_scan("2>$((1+2))<<<x") == ("$((1+2))", 10)
+
+    def test_a_quoted_opener_does_not_swallow_the_stdin_operator(self):
+        """Positive controls on quote-bearing text -- the quote characters are
+        DATA the walk steps over, and the parens inside them are bare, so the
+        depth-zero rule ends the target at the operator. Each boundary here
+        reached past the operator on the unfixed walk. Measured in bash:
+        ``python3 > 'a(b' <<< '<program>'`` creates the file ``a(b`` and RUNS
+        the here-string program (and the glued ``2>'a)(b'<<<'<program>'``
+        likewise), so the target must end before the operator, where bash ends
+        it."""
+        from kiro_crew import security
+
+        # The issue's measured case: end was 19 (past the `<<<`), now 8.
+        assert security._output_redirect_scan("> 'a(b' <<< payload") == (" 'a(b' ", 8)
+        assert security._output_redirect_scan('> "a{b" <<< payload') == (' "a{b" ', 8)
+        # Glued heredoc after a quoted opener: end was 12 (marker absorbed), now 7.
+        assert security._output_redirect_scan("2>'a(b'<<EOF") == ("'a(b'", 7)
+        assert security._output_redirect_scan('2>"a{b"<<EOF') == ('"a{b"', 7)
+        # An ESCAPED delimiter is one filename character too (`a\(b` is `a(b`).
+        assert security._output_redirect_scan("2>a\\(b<<<x") == ("a\\(b", 6)
+        # A quoted `)` at depth zero plus a quoted `(`: the unquoted walk opened a
+        # span that never closed and ran the target to the end of the text.
+        assert security._output_redirect_scan("2>'a)(b'<<<x") == ("'a)(b'", 8)
+        # ANSI-C: `$'` is not `$(`/`${`, so nothing opens and the paren is data.
+        assert security._output_redirect_scan("2>$'a(b'<<<x") == ("$'a(b'", 8)
+        assert security._output_redirect_scan("2>$'a\\')'<<<x") == ("$'a\\')'", 9)
+
+    def test_a_data_quote_is_not_read_as_grammar(self):
+        """The inverse direction, found in review (First Principles lane): the
+        tokenizer resolves quoting, so a quote character that SURVIVES it is
+        literal filename text (``2>"a'b"`` tokenizes to ``2>a'b``). A quoting
+        state opened on that data quote consumed the ``<<<`` to the end of the
+        text and hid the operator -- measured in bash, the spelling runs the
+        program, so the boundary must stay at the operator. The same rule keeps
+        the PID-parameter spelling (``$$'`` is not ANSI-C) and a quote inside
+        backticks (bash tolerates it unterminated there) at their pre-fix
+        boundaries."""
+        from kiro_crew import security
+
+        assert security._output_redirect_scan("2>a'b<<<x") == ("a'b", 5)
+        assert security._python_reads_stdin(["2>a'b<<<", "'prog'"]) is True
+        assert security._output_redirect_scan("2>$$'\\'<<<X") == ("$$'\\'", 7)
+        assert security._output_redirect_scan("2>`'`a<<<X") == ("`'`a", 6)
+
+    def test_the_unmoved_boundaries_do_not_move(self):
+        """Inverse controls, byte-identical before and after the fix: a real
+        substitution span still holds the walk open, a real backtick region
+        still toggles, and an unterminated quote or trailing backslash is
+        ordinary data to the end of the text."""
+        from kiro_crew import security
+
+        assert security._output_redirect_scan("2>$( (x)>y )") == ("$( (x)>y )", 12)
+        assert security._output_redirect_scan("2>`echo>x`") == ("`echo>x`", 10)
+        assert security._output_redirect_scan("2>${x:->}") == ("${x:->}", 9)
+        assert security._output_redirect_scan("2>'a(b") == ("'a(b", 6)
+        assert security._output_redirect_scan("2>\\") == ("\\", 3)
+
+    def test_the_stdin_program_is_detected_through_a_quoted_target(self):
+        """The detector-level consequence, on quote-bearing tokens and on the
+        de-quoted tokens the production frame actually carries: with the target
+        absorbing the glued ``<<<``, ``_python_reads_stdin`` answered False and
+        the program on stdin went unscanned."""
+        from kiro_crew import security
+
+        assert security._python_reads_stdin(["2>'a)(b'<<<", "'prog'"]) is True
+        assert security._python_reads_stdin(["2>'a(b'<<<", "'prog'"]) is True
+        assert security._python_reads_stdin(['2>"a{b"<<<', "'prog'"]) is True
+        # De-quoted, as `_self_token_frames` hands them over.
+        assert security._python_reads_stdin(["2>a)(b<<<", "prog"]) is True
+        assert security._python_reads_stdin(["2>a{b<<<", "prog"]) is True
+
+
 class TestNestedPayloadExtractionIsLinear:
     """``_nested_shell_payloads`` must stay LINEAR in token count.
 
