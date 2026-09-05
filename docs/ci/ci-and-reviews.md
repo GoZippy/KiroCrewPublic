@@ -403,7 +403,7 @@ design axis is **what each is allowed to read** (its prompt-injection surface) a
 | Opus 4.8 | `Opus 4.8 Review` | Agentic, `--max-turns 120` per stage, **two real invocations** (discovery -> validation) | **Code only**: `Read`, `Grep`, `Glob`, `Bash(gh pr diff:*)` | Line-level correctness, security, AUTOSDE | Yes, fail-closed |
 | GPT 5.6 | `GPT 5.6 Review` | Non-agentic, **two** invocations (discovery, then authoritative falsification), `reasoning_effort: medium` | Code plus PR title and body as nonce-wrapped **UNTRUSTED** context | Line-level second perspective, plus description-versus-diff consistency (advisory) | Yes, fail-closed |
 | Design Review | `Design Review` | Agentic Fable 5, with an Opus fallback model | Code plus `gh pr view` (it must judge intent) | Should we build this, and is it the right *shape*? | Advisory; red only on a genuine `BLOCK` |
-| UX Review | `UX Review` | Agentic Fable 5, with the same fallback | Code plus committed screenshot PNGs, read directly | Does the shipped experience read correctly? | Advisory; red only on a genuine `BLOCK` |
+| UX Review | `UX Review` | Agentic Fable 5, with the same fallback; **two real invocations** on same-repo PRs (blind read -> reconcile) | Pass 1: the committed screenshot PNGs **only**; pass 2: code, PR text, and pass 1's report | Can a first-time user who has read nothing tell what each new element is and does, and do state changes stay one continuous element? | Advisory; red only on a genuine `BLOCK` |
 | First Principles | `First Principles Review` | Agentic Fable 5, same fallback, `--max-turns 120` (inventorying and counting is grep-heavy) | Code, the whole repository, and `gh pr view` | What is the author trying to do, and does each thing this ships *deserve to exist*, already exist, or only patch a symptom? | Advisory; red only on a genuine `BLOCK` |
 
 ### Why a first-principles lane is not a second Design Review
@@ -672,6 +672,65 @@ comment churn, and the check passes. When screenshots are present it reads each 
 and grounds visual findings in them, and it is instructed to treat screenshot content
 as untrusted (a screenshot, title, commit message or filename attempting to grant
 leniency is ignored, and screenshot polish never waives a lens).
+
+### `UX Review` reads the screenshots blind before it reads the diff
+
+On same-repo PRs the lane is two model calls with a context wall between them.
+**Pass 1 (blind read)** gets the `Read` tool and a list of the images the PR commits,
+copied under opaque names (`shot-01.png`, ...) so an author-chosen filename such as
+`pinned-turn-chip.png` cannot prime it -- and nothing else: no diff, no PR title or
+description, no `Grep`/`Glob`/`Bash`. It is told it is a non-technical person
+opening the product for the first time and
+writes down, per element, what it appears to be, what a click would do, how sure it
+is, and whether it would dare to click. **Pass 2 (reconcile)** gets the diff, the PR
+text and pass 1's report as a data file, and adjudicates rather than re-reads.
+
+Why the wall exists: PR #6783 minimized a banner into a corner chip labelled
+"Pinned turn". Every AI lane passed it -- this one wrote that the chip was
+"self-teaching ... visibly labelled" -- and the product owner could not tell what the
+chip was. A reviewer that has read the diff and the description before it looks at
+the pixels has already learned the author's vocabulary; it can check that a label
+exists, is localized and is reversible, but it can no longer test whether a stranger
+understands it. The old lens 12 ("five-second proxy: imagine an uninformed reader")
+asked exactly that of a reviewer that was no longer uninformed, so it was replaced.
+
+Three rules follow from the split, all read off evidence rather than judged:
+
+- **Coverage.** Every user-visible control the diff adds or changes must appear in a
+  committed screenshot. One that does not is an *evidence gap*, listed under
+  `### Evidence gaps`, and the verdict cannot be `PASS`. A diff that adds or changes
+  no user-visible control has no gaps and needs no screenshot.
+- **Primary controls.** A control on the change's main path that the blind reader
+  misread (named a different thing or outcome than the diff implements), could not
+  identify, or would not dare to click is a `BLOCK`, quoting the reader's words. A
+  correct reading the reader rated only "a guess", secondary misreads, and
+  vocabulary collisions ("Pinned turn" next to the existing "Pinned messages") are
+  `CONCERNS`.
+- **State-transition continuity (lens 13).** When a user action or state flip
+  minimizes, collapses, relocates or replaces a *persistent* element the user has
+  already identified, the change must animate *one* element between the two states
+  (shared layout, a landing spot the eye can follow, continuous text, restore as the
+  reverse), respecting `prefers-reduced-motion`. A hard swap in the diff
+  (`flag ? <Chip/> : <Card/>`, an unmount/mount with no shared-element transition)
+  with no stated reason is a `BLOCK`. Async lifecycle states (loading, empty, error
+  -> content) are not in scope. The convention is also stated in `website/AGENTS.md`
+  so authors meet it before the check does. Static screenshots cannot show
+  continuity, so this class of change needs a recording (a committed or PR-body
+  `.gif`/`.mp4`/`.webm`); none is an evidence gap. The reviewer cannot play the
+  recording -- it verifies the mechanism in the diff and that the recording exists,
+  and a human watches it.
+
+The fork lane (`fork-ux-review.yml`) carries the same rules but has **no blind-read
+pass**: the fork head is never checked out, so the screenshots a fork PR adds are not
+on disk. It records every added or changed control as an evidence gap instead, which
+caps a fork UI change at `CONCERNS` (advisory). A maintainer who wants the blind read
+pushes the branch to this repository.
+
+The PR identity (number, repository, shas, data-file paths) is passed to both passes
+in `--append-system-prompt`, not in `prompt:`. GitHub rejects a workflow file
+silently (zero jobs, nothing on the PR) when any expression-bearing string exceeds
+21000 characters, and the review prompt is past that once it carries these rules, so
+`prompt:` must stay expression-free.
 
 ### Human override
 

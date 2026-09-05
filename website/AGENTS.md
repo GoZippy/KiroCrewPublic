@@ -92,6 +92,16 @@ ones (e.g. `typeof Notification !== 'undefined'`).
 - **Data fetching is React Query**, never `useState` + `useEffect`. Follow the
   existing query-key convention.
 - **Animation is Framer Motion.** Do not add new CSS `@keyframes`.
+- **A persistent element that changes form or place stays one element.** When
+  a user action or a state flip minimizes, collapses, relocates or replaces
+  something the user already has on screen, animate that one element between the
+  two states (`layoutId` / `layout`, a landing spot the eye can follow, text that
+  stays continuous, restore as the reverse). Never a hard swap of two components
+  (`flag ? <Chip/> : <Card/>`): the user reads it as "that vanished and something
+  else appeared" and no label repairs it. `prefers-reduced-motion` drops the
+  motion, not the continuity. Loading/empty/error → content transitions are not
+  this rule. Evidence for such a change is a recording, not a screenshot. Gated by
+  the UX Review lane (lens 13) — a hard swap with no stated reason is a BLOCK.
 - **Styling uses design tokens** (`var(--bg)`, `var(--text)`, …), never a literal
   color.
 - **Typography:** no `text-xs`, and no text below 10px.

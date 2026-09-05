@@ -1973,6 +1973,337 @@ class TestUxScopeGateSurvivesAWideDiff:
         assert "printf" not in gate, f"{lane}: writer is back in the pipeline"
 
 
+UX_BLIND_STEP = "Blind read of the committed screenshots (Fable 5)"
+UX_REVIEW_STEP = "UX review (Fable 5)"
+UX_EVIDENCE_STEP = "Collect blind-read evidence"
+UX_CAPTURE_STEP = "Capture the blind-read report"
+
+
+class TestUxReviewReadsTheScreenshotsBlindFirst:
+    """PR #6783 minimized a banner into a corner chip labelled "Pinned turn".
+    Every AI lane PASSed it -- this one wrote "self-teaching ... a visibly
+    labelled 'Pinned turn' chip" -- and the product owner could not tell what
+    the chip was. The reviewer had read the diff and the description before it
+    looked at the pixels, so the author's vocabulary had already primed it; a
+    prompt asking it to "imagine an uninformed reader" cannot undo that.
+
+    The fix is structural, not prose: a FIRST model call that can see only the
+    committed screenshots, and a SECOND that adjudicates its report against the
+    diff. These tests pin the wall between them.
+    """
+
+    def _steps(self, lane: str = "ux-review.yml") -> list[dict]:
+        doc = yaml.safe_load(_workflow(lane))
+        return list(doc["jobs"].values())[0]["steps"]
+
+    def _index(self, steps: list[dict], name: str) -> int:
+        for i, step in enumerate(steps):
+            if step.get("name") == name:
+                return i
+        raise AssertionError(f"no step named {name!r}")
+
+    def test_the_blind_pass_can_see_only_the_screenshots(self) -> None:
+        with_ = _step("ux-review.yml", UX_BLIND_STEP)["with"]
+        args = with_["claude_args"]
+        tools = _line_containing(args, "--allowedTools").strip()
+        # A PATH-SCOPED Read and nothing else: no shell (no `git diff`, no
+        # `gh pr view`), no Grep/Glob (no way to discover the code it is not
+        # supposed to read), and no bare `Read` -- an unscoped Read would let a
+        # screenshot carrying an injected instruction open /proc/self/environ
+        # and pull the job's Bedrock credentials into the transcript. Only the
+        # opaque-copy directory and the list file are admitted; the leading
+        # `/` before the expression makes the `//`-prefixed absolute-path rule.
+        assert tools.startswith('--allowedTools "Read('), tools
+        grants = tools[len('--allowedTools "') : -1].split(",")
+        assert grants == [
+            "Read(/${{ runner.temp }}/ux-blind/**)",
+            "Read(/${{ runner.temp }}/ux-screenshots.txt)",
+        ], grants
+        denied = _line_containing(args, "--disallowedTools")
+        for tool in ("Bash", "Grep", "Glob", "WebFetch"):
+            assert tool in denied, f"{tool} not denied to the blind reader"
+        # The checkout's CLAUDE.md / .claude/ are PR-controlled instructions the
+        # action would otherwise auto-load into the blind reader -- a channel
+        # that bypasses the wall without a single tool call. Only the runner's
+        # (empty) user source may be consulted.
+        assert _line_containing(args, "--setting-sources").strip() == "--setting-sources user"
+        # The only path it is handed is the screenshot list; the diff, the PR
+        # text and the blind-read report are never named to it.
+        system = _line_containing(args, "--append-system-prompt")
+        assert "ux-screenshots.txt" in system
+        # The map back to repository filenames is pass 2's; handing it to the
+        # blind reader would reopen the filename leak.
+        assert "ux-screenshot-map.txt" not in system
+        prompt = _flat(with_["prompt"])
+        for leak in ("git diff", "gh pr", "authentic.patch", "ux-blind-read.md", "pull request"):
+            assert leak not in prompt, f"blind-read prompt names {leak!r}"
+        assert "FIRST time" in prompt
+        assert "read no code, no ticket and no description" in prompt
+        assert "[UX-BLIND-READ]" in prompt
+
+    def test_the_blind_pass_runs_before_the_review_and_feeds_it_a_data_file(self) -> None:
+        steps = self._steps()
+        evidence = self._index(steps, UX_EVIDENCE_STEP)
+        blind = self._index(steps, UX_BLIND_STEP)
+        capture = self._index(steps, UX_CAPTURE_STEP)
+        review = self._index(steps, UX_REVIEW_STEP)
+        assert evidence < blind < capture < review
+        # Pass 2 reads the report the job wrote, not the pass-1 transcript.
+        review_args = _step("ux-review.yml", UX_REVIEW_STEP)["with"]["claude_args"]
+        system = _line_containing(review_args, "--append-system-prompt")
+        assert "ux-blind-read.md" in system
+        assert _step_env("ux-review.yml", UX_CAPTURE_STEP)["REPORT"].endswith("/ux-blind-read.md")
+        # The verdict the lane publishes is still pass 2's (id: review).
+        assert steps[review]["id"] == "review"
+        assert steps[blind]["id"] == "blind"
+
+    def test_each_ux_model_call_has_its_own_credential_assume(self) -> None:
+        """Same rule the GPT/Opus lanes pin: one AssumeRole session per call,
+        strictly interleaved, so pass 2 never inherits a session pass 1 spent."""
+        steps = self._steps()
+        creds, calls = [], []
+        for i, step in enumerate(steps):
+            uses = step.get("uses") or ""
+            if "configure-aws-credentials" in uses:
+                creds.append(i)
+            elif "claude-code-action" in uses:
+                calls.append(i)
+        assert len(calls) == 2, [steps[i].get("name") for i in calls]
+        assert len(creds) == 2
+        for slot, (call, assume) in enumerate(zip(calls, creds)):
+            assert assume < call
+            if slot + 1 < len(creds):
+                assert call < creds[slot + 1]
+
+    def test_a_failed_blind_read_degrades_to_an_evidence_gap_not_a_red_lane(self) -> None:
+        blind = _step("ux-review.yml", UX_BLIND_STEP)
+        assert blind.get("continue-on-error") is True
+        script = _step_script(_workflow("ux-review.yml"), UX_CAPTURE_STEP)
+        # The report is accepted only with the pass-1 marker (a mid-run message
+        # is not a report), and every no-report case writes WORDS pass 2 reads
+        # as a gap -- never an empty file that reads as "nothing to say".
+        assert 'grep -qF "[UX-BLIND-READ]" <<< "$report"' in script
+        assert "BLIND READ NOT PERFORMED" in script
+        assert "BLIND READ UNAVAILABLE" in script
+        # And pass 2 is told what the absence means.
+        prompt = _flat(_step("ux-review.yml", UX_REVIEW_STEP)["with"]["prompt"])
+        assert "If it says the blind read was not performed or is unavailable" in prompt
+        assert "every user-visible control this PR adds or changes is an evidence gap" in prompt
+
+    @pytest.mark.parametrize("lane", UX_LANES)
+    def test_review_prompts_carry_no_expression_so_the_21000_cap_cannot_bite(self, lane: str) -> None:
+        """GitHub rejects the whole workflow file -- zero jobs, no error on the
+        PR -- when any expression-bearing string exceeds 21000 characters. Both
+        UX prompts sat at ~19000 WITH expressions before these rules were
+        added; they now exceed the cap, so the identity must ride in
+        `--append-system-prompt` and `prompt:` must stay expression-free."""
+        for step in self._steps(lane):
+            with_ = step.get("with") or {}
+            prompt = with_.get("prompt")
+            if not prompt:
+                continue
+            assert "${{" not in prompt, f"{lane}/{step.get('name')}: prompt carries an expression"
+            args = with_["claude_args"]
+            for value in args.split("\n"):
+                if "${{" in value:
+                    assert len(value) < 2000, f"{lane}: an expression-bearing claude_args line is {len(value)} chars"
+        review = _step(lane, UX_REVIEW_STEP)["with"]
+        system = _line_containing(review["claude_args"], "--append-system-prompt")
+        assert "HEAD sha ${{" in system, f"{lane}: the HEAD sha is not handed to the reviewer"
+        # `#` starting a claude_args line is stripped as a comment by the
+        # action's parser; the PR number must not be written as `#N` at a line
+        # start, and no claude_args line may begin with `#`.
+        for value in review["claude_args"].split("\n"):
+            assert not value.strip().startswith("#"), f"{lane}: claude_args line would be stripped as a comment"
+        prompt = _flat(review["prompt"])
+        assert "[UX-REVIEWED] <HEAD sha>" in prompt
+        assert "copied verbatim from your system prompt" in prompt
+
+    @pytest.mark.parametrize("lane", UX_LANES)
+    def test_the_five_second_proxy_is_replaced_not_duplicated(self, lane: str) -> None:
+        prompt = _flat(_step(lane, UX_REVIEW_STEP)["with"]["prompt"])
+        # The old lens asked a primed reviewer to imagine being unprimed. Two
+        # copies of the cold-read test -- one real, one imagined -- would let
+        # the imagined one PASS what the real one could not.
+        assert "Five-second proxy" not in prompt
+        assert "SCREENSHOT FIDELITY" not in prompt
+        assert "12. BLIND-READ RECONCILIATION & SCREENSHOT EVIDENCE" in prompt
+        assert "13. STATE-TRANSITION CONTINUITY" in prompt
+        assert "YOU JUDGE THE SURFACE, NOT THE CODE" in prompt
+        assert "### Evidence gaps" in prompt
+        # Evidence gaps cap the verdict; a hard swap and a misread primary
+        # control are decidable BLOCKs.
+        assert "the verdict cannot be PASS" in prompt
+        assert "flag ? <Chip/> : <Card/>" in prompt
+        # Scoped to a persistent, already-identified element: the mechanical
+        # predicate must not fire on loading/empty/error conditionals.
+        assert "PERSISTENT element the user has already seen" in prompt
+        assert "NOT in scope: async lifecycle states" in prompt
+        assert "An async lifecycle state is not this exit" in prompt
+        # A stochastic "a guess" self-rating is not a BLOCK; a misread is.
+        assert '"A guess" alone is not this exit' in prompt
+        assert "`prefers-reduced-motion` disables the motion, not the continuity" in prompt
+        assert "needs a recording" in prompt
+        assert "Pinned turn" in prompt  # the vocabulary-collision example stays concrete
+
+    def test_the_fork_lane_says_it_has_no_blind_read_rather_than_faking_one(self) -> None:
+        fork = _workflow("fork-ux-review.yml")
+        steps = self._steps("fork-ux-review.yml")
+        assert all(step.get("name") != UX_BLIND_STEP for step in steps)
+        assert sum("claude-code-action" in (s.get("uses") or "") for s in steps) == 1
+        prompt = _flat(_step("fork-ux-review.yml", UX_REVIEW_STEP)["with"]["prompt"])
+        assert "NO BLIND READ IN THIS LANE" in prompt
+        assert "Read it FIRST" not in prompt
+        # The fork head is never checked out, so the fork lane must not claim
+        # to hand the reviewer a screenshot list or a report it cannot have.
+        system = _line_containing(_step("fork-ux-review.yml", UX_REVIEW_STEP)["with"]["claude_args"], "--append-system-prompt")
+        assert "ux-blind-read.md" not in system
+        assert "ux-screenshots.txt" not in system
+        assert "authentic.patch" in system
+        assert "never applied to the tree" in fork
+
+    def _run_evidence_gate(
+        self, repo: Path, base: str, tmp_path: Path
+    ) -> tuple[str, str, str, str, Path]:
+        bash = _bash()
+        if bash is None:
+            pytest.skip("the evidence step runs only under Bash")
+        script = _step_script(_workflow("ux-review.yml"), UX_EVIDENCE_STEP)
+        blind_dir = tmp_path / "ux-blind"
+        shots = tmp_path / "shots.txt"
+        shot_map = tmp_path / "shot-map.txt"
+        clips = tmp_path / "clips.txt"
+        github_output = tmp_path / "github_output"
+        github_output.touch()
+        out = subprocess.run(
+            [bash, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=repo,
+            env={
+                **self._git_env(tmp_path),
+                "BASE_SHA": base,
+                "BLIND_DIR": blind_dir.as_posix(),
+                "SHOTS": str(shots),
+                "SHOT_MAP": str(shot_map),
+                "CLIPS": str(clips),
+                "MAX_SHOTS": "40",
+                "GITHUB_OUTPUT": str(github_output),
+            },
+        )
+        assert out.returncode == 0, out.stderr
+        return (
+            shots.read_text(encoding="utf-8"),
+            shot_map.read_text(encoding="utf-8"),
+            clips.read_text(encoding="utf-8"),
+            github_output.read_text(encoding="utf-8"),
+            blind_dir,
+        )
+
+    @staticmethod
+    def _git_env(tmp_path: Path) -> dict[str, str]:
+        """An environment in which git can only see the scratch repository.
+
+        An inherited `GIT_DIR` / `GIT_WORK_TREE` / `GIT_INDEX_FILE` (set by a
+        hook, a wrapper, or a parent test runner) would make `git init` and
+        every write below land in THAT repository despite `cwd=repo`, so every
+        `GIT_*` location variable is dropped. Global and system config are
+        pointed away too, so a host-wide `commit.gpgsign` or hook path cannot
+        reach the fixture.
+        """
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        gitconfig = tmp_path / "gitconfig"
+        gitconfig.touch()
+        env["GIT_CONFIG_GLOBAL"] = str(gitconfig)
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        return env
+
+    def _git(self, repo: Path, *args: str) -> str:
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=repo,
+            env=self._git_env(repo.parent),
+        ).stdout.strip()
+
+    def test_the_evidence_step_copies_regular_images_under_opaque_names(self, tmp_path: Path) -> None:
+        """Execute the ACTUAL evidence script. The blind reader is handed
+        copies named shot-NN.<ext>, never the repository paths: an author-named
+        `pinned-turn-chip.png` would prime it with the exact word the wall
+        hides. A tracked symlink under temp-screenshots/ would let a PR point
+        the reader -- which has only the Read tool -- at any file on the runner;
+        recordings are listed for the continuity lens and a GIF counts as both."""
+        if os.name == "nt":
+            pytest.skip("symlink creation needs privileges on Windows")
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        self._git(repo, "init", "-q")
+        (repo / "README").write_text("base\n")
+        self._git(repo, "add", "README")
+        self._git(repo, "commit", "-qm", "base")
+        base = self._git(repo, "rev-parse", "HEAD")
+        shots = repo / "temp-screenshots" / "f"
+        shots.mkdir(parents=True)
+        (shots / "pinned-turn-chip.png").write_bytes(b"\x89PNG")
+        (shots / "restore.GIF").write_bytes(b"GIF89a")
+        (shots / "c.webm").write_bytes(b"\x1a\x45")
+        (shots / "link.png").symlink_to(repo / "README")
+        (repo / "website").mkdir()
+        (repo / "website" / "App.tsx").write_text("x")
+        self._git(repo, "add", "-A")
+        self._git(repo, "commit", "-qm", "head")
+
+        shot_list, shot_map, clip_list, output, blind_dir = self._run_evidence_gate(
+            repo, base, tmp_path
+        )
+        # Opaque, order-numbered, extension kept (lower-cased) -- and nothing
+        # of the author's naming survives into what pass 1 can see.
+        assert shot_list.splitlines() == [
+            f"{blind_dir.as_posix()}/shot-01.png",
+            f"{blind_dir.as_posix()}/shot-02.gif",
+        ]
+        assert "pinned-turn" not in shot_list
+        assert sorted(p.name for p in blind_dir.iterdir()) == ["shot-01.png", "shot-02.gif"]
+        assert (blind_dir / "shot-01.png").read_bytes() == b"\x89PNG"
+        # Pass 2 gets the map back to the repository paths.
+        assert shot_map.splitlines() == [
+            "shot-01.png\ttemp-screenshots/f/pinned-turn-chip.png",
+            "shot-02.gif\ttemp-screenshots/f/restore.GIF",
+        ]
+        # `git diff --name-only` orders by path, so the recording list is
+        # byte-ordered too: c.webm sorts before restore.GIF.
+        assert clip_list.splitlines() == ["temp-screenshots/f/c.webm", "temp-screenshots/f/restore.GIF"]
+        assert "screens=true" in output
+
+    def test_the_evidence_step_reports_no_screens_for_a_code_only_ui_change(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        self._git(repo, "init", "-q")
+        (repo / "README").write_text("base\n")
+        self._git(repo, "add", "README")
+        self._git(repo, "commit", "-qm", "base")
+        base = self._git(repo, "rev-parse", "HEAD")
+        (repo / "website").mkdir()
+        (repo / "website" / "App.tsx").write_text("x")
+        self._git(repo, "add", "-A")
+        self._git(repo, "commit", "-qm", "head")
+        shot_list, shot_map, clip_list, output, blind_dir = self._run_evidence_gate(
+            repo, base, tmp_path
+        )
+        assert shot_list == "" and shot_map == "" and clip_list == ""
+        assert list(blind_dir.iterdir()) == []
+        assert "screens=false" in output
+        # ...and the blind pass is gated on that output, so no model call is
+        # spent reading nothing.
+        blind = _step("ux-review.yml", UX_BLIND_STEP)
+        assert "steps.evidence.outputs.screens == 'true'" in str(blind["if"])
+
+
 ADVISORY_LANES = {
     "design-review.yml": "DESIGN-REVIEWED",
     "fork-design-review.yml": "DESIGN-REVIEWED",
