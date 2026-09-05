@@ -28,7 +28,7 @@ import { useQueuedMessageActions, queuedSendStash } from '../hooks/useQueuedMess
 import { useChatPopouts } from '../hooks/useChatPopouts'
 import {
   switchSlot, createSlot, deleteSlot, fetchHistory, loadOlderMessages, abortActiveOlderFetch, isSupersededPagingRejection,
-  appendMessage, appendSlotMessage, resumeFromHistory, clearUnresumableResume, forkSlot,
+  appendMessage, appendSlotMessage, endLocalTurn, resumeFromHistory, clearUnresumableResume, forkSlot,
   setSlotRunning, startLocalTurn, syncSlotRunningFromServer, setPendingInput, setAgentSwitchNotice, resolveByApprovalId, clearPendingPermissions,
   selectComposerBusy,
   selectContinuable,
@@ -42,7 +42,8 @@ import {
   requestSlotReveal,
   mcpAppKey,
 } from '../store/chatSlice'
-import { confirmedDelivered, readSendReceipt } from '../utils/sendDelivery'
+import { confirmedDelivered } from '../utils/sendDelivery'
+import { sendTurn } from '../chat-core/transport/sendTurn'
 import { addNotification, removeNotificationByTs } from '../store/notificationsSlice'
 import { onTerminalReady, sendToTerminalSession, getTerminalShell, getTerminalFenceShells } from '../utils/terminalRegistry'
 import { runInTerminalText } from '../utils/fenceShell'
@@ -1664,17 +1665,90 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
   const [modelBtnRect, setModelBtnRect] = useState<DOMRect | null>(null)
   // NOT fire-and-forget: the receipt is the only thing that knows whether the
   // text reached the running turn, and the optimistic bubble asserts that it did.
+  // The same `/api/chat` POST as `send()` with the `steer` flag, through the
+  // same transport -- `sendTurn` never rejects, so the outcome is read from the
+  // receipt, not from an error callback.
   const steerMutation = useMutation({
-    mutationFn: ({ text, sendId, slot }: { text: string; sendId?: string; slot: string }) => api.steerChat(text, slot, sendId),
-    // eslint-disable-next-line no-console -- no toast for a rejected steer, which is otherwise indistinguishable from one the agent ignored
-    onError: (e) => { console.error('steer failed', e) },
-    onSuccess: (body, { sendId, slot }) => {
+    mutationFn: ({ text, sendId, slot }: { text: string; sendId?: string; slot: string }) =>
+      sendTurn({ message: text, slot, steer: true, ...(sendId ? { meta: { sendId } } : {}) }),
+    onSuccess: (receipt, { text, sendId, slot }) => {
+      // Receipt policy for a steer. The composer was cleared at submit and the
+      // optimistic bubble is NOT persisted -- the next transcript rebuild drops
+      // it -- so a steer that did not provably reach the gateway hands its text
+      // back. Everything below is addressed to the SENDING slot, not the
+      // active one: the user can switch sessions inside the deadline window,
+      // and this text and its rows belong to the transcript they were typed
+      // into (the same rule `send()`'s restore and steer-echo append follow).
+      // "On screen" means the LIVE composer state belongs to this slot --
+      // `composerSlotRef`, not `activeSlotRef`: during a slot switch the active
+      // slot has already flipped while the composer still holds (and is about
+      // to flush) the outgoing slot's text. Writing only the persisted draft in
+      // that window would be overwritten by that flush from the stale input;
+      // updating the live input instead is what the flush then persists.
+      const onScreenNow = composerSlotRef.current === slot
+      const handBack = () => {
+        const kept = onScreenNow ? inputRef.current : (drafts.current[slot] ?? '')
+        const back = mergeRecoveredDraft(kept, text)
+        setDraft(drafts.current, slot, back)
+        saveDrafts()
+        if (onScreenNow) setInput(back)
+      }
+      const row = (message: ChatMessage) => dispatch(appendSlotMessage({ slot, message }))
+      // - `refused` / `transport-error`: nothing was accepted -- the same two
+      //   outcomes `send()` reports with an error row (the server's reason,
+      //   framed, or the connection copy that names the restore) and a
+      //   restore. The optimistic bubble is dropped first (the reducer's drop
+      //   arm; a no-op once the server owns the row): left standing it would be
+      //   a third, false representation of the same text next to the error row
+      //   and the refilled composer.
+      if (receipt.status === 'refused' || receipt.status === 'transport-error') {
+        if (sendId) dispatch(resolveOptimisticSteer({ slot, sendId, outcome: 'queued' }))
+        row({
+          role: 'error',
+          content: receipt.reason
+            ? i18nT('pages.chatPage.send_failed_with_error', { error: receipt.reason })
+            : i18nT(receipt.status === 'transport-error' ? 'pages.chatPage.send_failed_connection' : 'pages.chatPage.send_failed'),
+          cls: '',
+        })
+        handBack()
+        return
+      }
+      // - `response-late`: the transport's deadline fired and aborted the POST.
+      //   It may have arrived (a slow answer) or not (a stalled socket the abort
+      //   killed) -- the steer never had a deadline before this transport, so
+      //   this window is new here. If the server's own echo already reconciled
+      //   the bubble, the steer landed: nothing to do. Otherwise the bubble is
+      //   removed (standing, it would read as delivered), the text goes back,
+      //   and a WARN-tone notice tells the user to check the transcript before
+      //   resending -- a duplicate is visible and deletable, a lost steer is not.
+      if (receipt.status === 'response-late') {
+        if (sendId) {
+          const chat = store.getState().chat
+          const rows = slot === chat.activeSlot ? chat.messages : (chat.slotMessages[slot] ?? chat.messages)
+          const bubble = rows.find(m => m.role === 'user' && m.meta?.sendId === sendId)
+          if (bubble && !bubble.meta?.optimistic) return
+          // `queued` is the reducer's DROP arm (its other arm, `turn`, demotes):
+          // an unconfirmed steer drops its bubble for the same reason a
+          // demoted-to-queue one does -- the server-side row, if any, is the
+          // representation, and a standing bubble would assert delivery.
+          dispatch(resolveOptimisticSteer({ slot, sendId, outcome: 'queued' }))
+        }
+        handBack()
+        // The lead glyph is NoticeCard's tone selector (parseNotice): \u26A0 =
+        // warn, which also gives the row its "Warning" screen-reader label.
+        // Kept out of the catalog string so the copy stays shared with the
+        // surfaces that render it in their own strip.
+        row({ role: 'notice', content: '\u26A0\uFE0F ' + i18nT('pages.chatPage.delivery_unconfirmed'), cls: '' })
+        return
+      }
       if (!sendId || !slot) return
-      const receipt = (body ?? {}) as { ok?: boolean; steered?: boolean; queued?: boolean }
-      // `steered` is the one shape the badge's claim is true for; an unreadable
-      // body confirms nothing, so it must not rewrite the bubble either.
-      if (receipt.steered || !receipt.ok) return
-      dispatch(resolveOptimisticSteer({ slot, sendId, outcome: receipt.queued ? 'queued' : 'turn' }))
+      // - `unknown`: a 2xx whose body would not parse. Accepted; `steered` is the
+      //   one shape the badge's claim is true for and an unreadable body
+      //   confirms nothing, so neither rewrites the bubble.
+      if (receipt.status === 'unknown') return
+      const body = receipt.body as { steered?: boolean }
+      if (body.steered) return
+      dispatch(resolveOptimisticSteer({ slot, sendId, outcome: receipt.status === 'queued' ? 'queued' : 'turn' }))
     },
   })
   const [reasoningEffortDropdown, setReasoningEffortDropdown] = useState(false)
@@ -5184,8 +5258,6 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     sendingRef.current = false
     setTimeout(() => scrollBottom(), SCROLL_AFTER_RENDER_MS)
     if (slot) dispatch(startLocalTurn(slot))
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10_000)
     /**
      * Put the composer back the way it was before this send.
      *
@@ -5216,7 +5288,9 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
      */
     const restoreComposerAfterFailedSend = () => {
       if (!slot) return
-      const onScreenNow = slot === activeSlotRef.current
+      // Ownership of the live composer state, not the active tab: see the
+      // steer receipt's `onScreenNow` for the mid-switch window this closes.
+      const onScreenNow = composerSlotRef.current === slot
       const liveRefs = onScreenNow ? pendingSessionsRef.current : (sessionRefDrafts.current[slot] ?? [])
       const refsBack = mergeSessionRefs(liveRefs, sentSessionRefs)
       // MERGE, never overwrite. The send is in flight for up to 10s, and the user
@@ -5248,136 +5322,169 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
         setInput(textBack); setPasteBlocks(pastesBack); setPendingSessions(refsBack)
       }
     }
-    try {
-      const r = await api.sendChat(llmTxt, slot ?? undefined, colorThemeRef.current, controller.signal, metaPayload, steerNow)
-      clearTimeout(timeout)
-      const { body, outcome } = await readSendReceipt(r)
-      // An UNKNOWN outcome — a 2xx whose body would not parse — reaches neither
-      // arm below and is the point of routing through `readSendReceipt`. The
-      // request was accepted and only its answer is mangled, so this send sits
-      // where the abort in the catch below sits: it may have started a turn that
-      // is streaming right now. Reporting a refusal there would hand the payload
-      // back and invite a retry that duplicates a delivered turn, so an unknown
-      // takes no action rather than asserting a refusal it cannot prove.
-      if (body.queued && llmTxt === typedTxtDirs) {
-        // The server queued this send and its receipt names the entry:
-        // `queue_id` is the same id `queue_push` broadcasts and the card's
-        // cancel button carries, so the pre-send composer state binds to
-        // exactly this card — content plays no part in the key, which is what
-        // makes duplicate texts, serialization-colliding captions, and other
-        // tabs' cards structurally unable to consume someone else's record.
-        // A receipt without `queue_id` (an older gateway, a requeued steer)
-        // simply doesn't stash — the parser fallback covers those cards.
-        //
-        // Eligibility is DERIVED, not enumerated: stash only when the POSTed
-        // text is exactly what {raw, staged files} alone explain
-        // (`typedTxtDirs` — prepareSendPayload + dir-token serialization).
-        // Expanded paste blocks, appended session-ref links, a prepended
-        // knowledge block, and ANY FUTURE feature that diverges `llmTxt`
-        // from the composer state all fail this equality and fall to the
-        // parser — a stash hit for such a send would restore `raw` WITHOUT
-        // the context the user staged, silently dropping it, so the failure
-        // mode of forgetting is a conservative fallback, not silent loss.
-        //
-        // No size bound on purpose: an entry is deleted on the cancel that
-        // consumes it, and evicting a live entry would degrade that queued
-        // card's cancel to the parser fallback — for a spaced attachment path
-        // that is exactly the marker-in-composer data loss this PR exists to
-        // fix. Entries orphaned by normal delivery are three small strings
-        // and are bounded by how many sends a single tab queues in one
-        // session.
-        if (typeof body.queue_id === 'string' && body.queue_id) {
-          queuedSendStash.set(body.queue_id, { raw, files: stagedFilesAtSend, sent: llmTxt })
-        }
-      }
-      if (outcome === 'refused') {
-        dispatch(setSlotRunning(false))
-        const reason = typeof body.error === 'string' ? body.error : ''
-        dispatch(appendMessage({ role: 'error', content: reason || i18nT('pages.chatPage.send_failed'), cls: '' }))
-        // The server explicitly accepted neither (`ok` nor `queued`), so nothing
-        // was sent — recovering the composer cannot duplicate a delivered turn.
-        restoreComposerAfterFailedSend()
-      } else if (outcome === 'accepted' && steerNow && _busy && !body.queued && !body.steered) {
-        // A steer-flagged send the server neither queued nor injected: it
-        // started a turn, so no `queue_push` or `steer_push` echo is coming and
-        // the busy rule above left the text with nothing to represent it.
-        // Append only once the answer rules out both echoes — a mid-plan send
-        // is queued, and a child turn that started while this POST was in
-        // flight is injected mid-turn, each of which brings its own bubble.
-        // Addressed to the SENDING slot, not the active one: the user can
-        // switch sessions while the POST is in flight, and this text belongs to
-        // the transcript it was typed into (same reason `steer_push` uses this).
-        if (slot) {
-          dispatch(appendSlotMessage({
-            slot,
-            message: { role: 'user', content: displayTxt, cls: '', ts: new Date().toISOString(), meta: metaPayload },
-          }))
-        }
-      }
-      if (slot && confirmedDelivered(body)) {
-        // The response IS the delivery receipt (#4131). The server accepted the
-        // message and appended (or queued) the row, so the optimistic bubble is
-        // confirmed and must stop being a candidate for the 30s "may not have
-        // been delivered" sweep. Nothing else can retire it on this surface: the
-        // `chat_message` user echo `reconcileOptimisticEcho` waits for is
-        // suppressed for every dashboard send by design (`DashboardState.append`
-        // defaults `broadcast_user=False` precisely because the composer already
-        // rendered this bubble), so before this the flag survived the whole turn
-        // and only vanished when `chat_done`'s refresh rebuilt the transcript
-        // from disk.
-        //
-        // Addressed to the SENDING slot for the same reason as the steer-echo
-        // append above. Harmless when the busy rule appended no bubble — no row
-        // carries this `sendId`, so it is a no-op. Deliberately NOT dispatched on
-        // a rejected response, a queued acceptance, or the abort-timeout path:
-        // there delivery of THIS row is unknown, which is what the indicator
-        // exists to say (see `confirmedDelivered`).
-        // The receipt carries the server-minted user-row `mid` (when the send
-        // dispatched immediately); handing it to the reconcile stamps it onto
-        // this optimistic bubble so message-pinning works this turn instead of
-        // only after the chat_done refresh.
-        dispatch(confirmOptimisticSend({ slot, sendId, mid: typeof body.mid === 'string' ? body.mid : undefined }))
-      }
-      if (body.ok && !body.queued && cardAtSend && slot === entrySendSlot) {
-        // Immediate dispatch confirmed (`ok`): the message consumed the slot's
-        // next-turn channel, so the card captured at entry is now stale. An
-        // independent check, not part of the else-if chain above — the
-        // steer-echo branch also implies `ok && !queued`, and the card must
-        // retire regardless of which transcript-echo rule applied. A QUEUED
-        // acceptance deliberately does NOT retire here — the queued message is
-        // still cancellable, and cancelling must keep the card; it retires at
-        // its queue_pop instead (removeQueuedMessage). The slot-identity guard
-        // covers forceNew rerouting the send into a freshly created session —
-        // that send answers nothing in the entry slot, whose card must stay.
-        // Deliberately NOT done on the optimistic append (a failed send must
-        // keep the card) nor on the abort-timeout path below (delivery
-        // unconfirmed — a wrongly kept card is dismissible, a wrongly deleted
-        // one is not recoverable).
-        dispatch(retireStatelessQuestion({ slot, expected: cardAtSend }))
-      }
-      if (body.ok && !body.queued && folderCardAtSend && slot === entrySendSlot) {
-        // Same delivery bar and slot-identity guard as the stateless-card
-        // retirement above, for the folder-suggestion card's turn-aging: the
-        // card was on screen when the user hit send (captured at entry, active
-        // slot only) and the server confirmed the send was delivered. Failed
-        // sends never reach here; queued sends are still cancellable; forceNew
-        // reroutes answer nothing in the entry slot. ts pins the card
-        // generation, so a replacement that landed mid-flight is not aged.
-        dispatch(ageFolderSuggestion({ slot, ts: folderCardAtSend.ts }))
-      }
-      // The user answered in the composer instead of the card; a blocking card
-      // is resolved over the network, so this cannot be a store-only retirement.
-      void resolveAskAfterSend(body, slot === entrySendSlot ? askAtSend : null, dispatch)
-    } catch (e: unknown) {
-      clearTimeout(timeout)
-      if (e instanceof DOMException && e.name === 'AbortError') {
-        // Timeout — message was received, WS will deliver response
+    // The POST, its 10 s deadline, the resolves-not-rejects trap and the body
+    // classification all live in the chat-core transport now; this surface
+    // only decides how to REACT to the receipt. `sendTurn` never rejects.
+    const receipt = await sendTurn({
+      message: llmTxt,
+      slot: slot ?? undefined,
+      meta: metaPayload,
+      steer: steerNow,
+      colorTheme: colorThemeRef.current,
+    })
+    const { body } = receipt
+    // - `transport-error`: the fetch itself rejected -- the send never left, so
+    //   restore-and-report is safe (the old catch branch).
+    // - `response-late`: the deadline fired -- the message was received and the
+    //   WS will deliver the answer; the optimistic bubble stays pending and its
+    //   delivery indicator says so (the old AbortError branch).
+    // - `unknown`: a 2xx whose body would not parse. The request was accepted
+    //   and only its answer is mangled, so it may have started a turn that is
+    //   streaming right now. Reporting a refusal would hand the payload back
+    //   and invite a retry that duplicates a delivered turn, so an unknown
+    //   takes no action rather than asserting a refusal it cannot prove. It
+    //   still falls through to the body-driven steps below, which all read
+    //   `ok` / `queued` and are no-ops on an empty body.
+    // Both failure branches are addressed to the SENDING slot: the user can
+    // switch sessions while the POST is in flight, and a failure that lands
+    // then must neither clear the new session's running state nor put its
+    // error row in the new session's transcript (`endLocalTurn` is the
+    // slot-keyed inverse of the `startLocalTurn` above; `appendSlotMessage`
+    // routes to the slot's own list, the active one included).
+    const failLocalTurn = (message: ChatMessage) => {
+      if (slot) {
+        dispatch(endLocalTurn(slot))
+        dispatch(appendSlotMessage({ slot, message }))
       } else {
         dispatch(setSlotRunning(false))
-        dispatch(appendMessage({ role: 'error', content: i18nT('pages.chatPage.connection_error'), cls: '' }))
-        restoreComposerAfterFailedSend()
+        dispatch(appendMessage(message))
       }
     }
+    if (receipt.status === 'transport-error') {
+      // Cause-stating and naming the restore ("...and try again"), the shared
+      // core copy the other surfaces use, instead of a bare "Connection error".
+      failLocalTurn({ role: 'error', content: i18nT('pages.chatPage.send_failed_connection'), cls: '' })
+      restoreComposerAfterFailedSend()
+      return
+    }
+    if (receipt.status === 'response-late') return
+    const accepted = receipt.status === 'dispatched' || receipt.status === 'queued'
+    if (body.queued && llmTxt === typedTxtDirs) {
+      // The server queued this send and its receipt names the entry:
+      // `queue_id` is the same id `queue_push` broadcasts and the card's
+      // cancel button carries, so the pre-send composer state binds to
+      // exactly this card — content plays no part in the key, which is what
+      // makes duplicate texts, serialization-colliding captions, and other
+      // tabs' cards structurally unable to consume someone else's record.
+      // A receipt without `queue_id` (an older gateway, a requeued steer)
+      // simply doesn't stash — the parser fallback covers those cards.
+      //
+      // Eligibility is DERIVED, not enumerated: stash only when the POSTed
+      // text is exactly what {raw, staged files} alone explain
+      // (`typedTxtDirs` — prepareSendPayload + dir-token serialization).
+      // Expanded paste blocks, appended session-ref links, a prepended
+      // knowledge block, and ANY FUTURE feature that diverges `llmTxt`
+      // from the composer state all fail this equality and fall to the
+      // parser — a stash hit for such a send would restore `raw` WITHOUT
+      // the context the user staged, silently dropping it, so the failure
+      // mode of forgetting is a conservative fallback, not silent loss.
+      //
+      // No size bound on purpose: an entry is deleted on the cancel that
+      // consumes it, and evicting a live entry would degrade that queued
+      // card's cancel to the parser fallback — for a spaced attachment path
+      // that is exactly the marker-in-composer data loss this PR exists to
+      // fix. Entries orphaned by normal delivery are three small strings
+      // and are bounded by how many sends a single tab queues in one
+      // session.
+      if (typeof body.queue_id === 'string' && body.queue_id) {
+        queuedSendStash.set(body.queue_id, { raw, files: stagedFilesAtSend, sent: llmTxt })
+      }
+    }
+    if (receipt.status === 'refused') {
+      // FRAMED like the steer's refusal (and ChatEmbed's): a raw backend reason
+      // ("slot agent mismatch") reads as the agent erroring mid-work, not as
+      // "your request never went out".
+      failLocalTurn({
+        role: 'error',
+        content: receipt.reason
+          ? i18nT('pages.chatPage.send_failed_with_error', { error: receipt.reason })
+          : i18nT('pages.chatPage.send_failed'),
+        cls: '',
+      })
+      // The server explicitly accepted neither (`ok` nor `queued`), so nothing
+      // was sent — recovering the composer cannot duplicate a delivered turn.
+      restoreComposerAfterFailedSend()
+    } else if (accepted && steerNow && _busy && !body.queued && !body.steered) {
+      // A steer-flagged send the server neither queued nor injected: it
+      // started a turn, so no `queue_push` or `steer_push` echo is coming and
+      // the busy rule above left the text with nothing to represent it.
+      // Append only once the answer rules out both echoes — a mid-plan send
+      // is queued, and a child turn that started while this POST was in
+      // flight is injected mid-turn, each of which brings its own bubble.
+      // Addressed to the SENDING slot, not the active one: the user can
+      // switch sessions while the POST is in flight, and this text belongs to
+      // the transcript it was typed into (same reason `steer_push` uses this).
+      if (slot) {
+        dispatch(appendSlotMessage({
+          slot,
+          message: { role: 'user', content: displayTxt, cls: '', ts: new Date().toISOString(), meta: metaPayload },
+        }))
+      }
+    }
+    if (slot && confirmedDelivered(body)) {
+      // The response IS the delivery receipt (#4131). The server accepted the
+      // message and appended (or queued) the row, so the optimistic bubble is
+      // confirmed and must stop being a candidate for the 30s "may not have
+      // been delivered" sweep. Nothing else can retire it on this surface: the
+      // `chat_message` user echo `reconcileOptimisticEcho` waits for is
+      // suppressed for every dashboard send by design (`DashboardState.append`
+      // defaults `broadcast_user=False` precisely because the composer already
+      // rendered this bubble), so before this the flag survived the whole turn
+      // and only vanished when `chat_done`'s refresh rebuilt the transcript
+      // from disk.
+      //
+      // Addressed to the SENDING slot for the same reason as the steer-echo
+      // append above. Harmless when the busy rule appended no bubble — no row
+      // carries this `sendId`, so it is a no-op. Deliberately NOT dispatched on
+      // a rejected response, a queued acceptance, or the abort-timeout path:
+      // there delivery of THIS row is unknown, which is what the indicator
+      // exists to say (see `confirmedDelivered`).
+      // The receipt carries the server-minted user-row `mid` (when the send
+      // dispatched immediately); handing it to the reconcile stamps it onto
+      // this optimistic bubble so message-pinning works this turn instead of
+      // only after the chat_done refresh.
+      dispatch(confirmOptimisticSend({ slot, sendId, mid: typeof body.mid === 'string' ? body.mid : undefined }))
+    }
+    if (body.ok && !body.queued && cardAtSend && slot === entrySendSlot) {
+      // Immediate dispatch confirmed (`ok`): the message consumed the slot's
+      // next-turn channel, so the card captured at entry is now stale. An
+      // independent check, not part of the else-if chain above — the
+      // steer-echo branch also implies `ok && !queued`, and the card must
+      // retire regardless of which transcript-echo rule applied. A QUEUED
+      // acceptance deliberately does NOT retire here — the queued message is
+      // still cancellable, and cancelling must keep the card; it retires at
+      // its queue_pop instead (removeQueuedMessage). The slot-identity guard
+      // covers forceNew rerouting the send into a freshly created session —
+      // that send answers nothing in the entry slot, whose card must stay.
+      // Deliberately NOT done on the optimistic append (a failed send must
+      // keep the card) nor on the abort-timeout path below (delivery
+      // unconfirmed — a wrongly kept card is dismissible, a wrongly deleted
+      // one is not recoverable).
+      dispatch(retireStatelessQuestion({ slot, expected: cardAtSend }))
+    }
+    if (body.ok && !body.queued && folderCardAtSend && slot === entrySendSlot) {
+      // Same delivery bar and slot-identity guard as the stateless-card
+      // retirement above, for the folder-suggestion card's turn-aging: the
+      // card was on screen when the user hit send (captured at entry, active
+      // slot only) and the server confirmed the send was delivered. Failed
+      // sends never reach here; queued sends are still cancellable; forceNew
+      // reroutes answer nothing in the entry slot. ts pins the card
+      // generation, so a replacement that landed mid-flight is not aged.
+      dispatch(ageFolderSuggestion({ slot, ts: folderCardAtSend.ts }))
+    }
+    // The user answered in the composer instead of the card; a blocking card
+    // is resolved over the network, so this cannot be a store-only retirement.
+    void resolveAskAfterSend(body, slot === entrySendSlot ? askAtSend : null, dispatch)
     // `send` is deliberately kept stable: it reads volatile values (agent,
     // model, project, mode, colorTheme, activeSlot) through refs so it does not
     // re-create on every keystroke/theme/agent change (it is passed to children
@@ -7259,12 +7366,12 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     dispatch(appendMessage({ role: 'user', content: llmTxt, cls: 'msg msg-u', ts: new Date().toISOString(), meta: { steer: true, optimistic: true, sendId: steerSendId } }))
     steerMutation.mutate({ text: llmTxt, sendId: steerSendId, slot: activeSlot })
     // Staged session references are deliberately NOT part of steering: neither
-    // carried into the payload nor cleared. `steerMutation`'s onError only logs,
-    // so anything cleared here is gone for good — text, attachments and pastes
-    // have always been discarded on a failed steer, and adding refs to that set
+    // carried into the payload nor cleared. Only the TEXT has a restore path
+    // (steerMutation hands it back on a refused, failed or unconfirmed steer);
+    // attachments and pastes are still discarded, and adding refs to that set
     // would lose a reference the user cannot recover except by dragging again.
     // Leaving them staged is lossless and predictable: the chip stays in the
-    // composer and rides the next real send, which does have a restore path.
+    // composer and rides the next real send, which does have a full restore path.
     setInput(''); setPendingFiles([]); pickedFileTokens.current = {}; setPasteBlocks([])
     delete drafts.current[activeSlot]; delete fileDrafts.current[activeSlot]; delete pasteDrafts.current[activeSlot]
     saveDrafts()

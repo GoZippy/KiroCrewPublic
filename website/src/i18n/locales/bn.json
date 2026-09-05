@@ -9436,6 +9436,7 @@
       "return_to_split_view": "স্প্লিট ভিউতে ফিরে যান",
       "scroll_to_bottom": "একদম নিচে যান",
       "send_failed": "পাঠানো যায়নি",
+      "send_failed_connection": "পাঠানো যায়নি — আপনার সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।",
       "session_not_found": "\"{{name}}\" সেশন পাওয়া যায়নি",
       "session_options": "সেশন অপশন",
       "show_sessions": "সেশন দেখাও",
@@ -9468,7 +9469,8 @@
       "what_can_i_do_for_you": "আপনার জন্য কী করতে পারি?",
       "worktree_creation_returned_no_path": "worktree তৈরি করে কোনো পাথ ফেরত আসেনি",
       "loading_earlier_messages": "পূর্ববর্তী বার্তা লোড হচ্ছে…",
-      "send_failed_with_error": "পাঠানো যায়নি: {{error}}"
+      "send_failed_with_error": "পাঠানো যায়নি: {{error}}",
+      "delivery_unconfirmed": "ডেলিভারি নিশ্চিত হয়নি — আপনার লেখা ইনপুট বাক্সে ফিরিয়ে দেওয়া হয়েছে; আবার পাঠানোর আগে কথোপকথনটি দেখে নিন।"
     },
     "chatSidebar": {
       "1_skipped_currently_selected": "(1টি এড়িয়ে যাওয়া হয়েছে — এখন বেছে নেওয়া আছে)",

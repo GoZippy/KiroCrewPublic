@@ -9704,6 +9704,7 @@
       "return_to_split_view": "Вернуться к разделённому виду",
       "scroll_to_bottom": "Прокрутить вниз",
       "send_failed": "Не удалось отправить",
+      "send_failed_connection": "Не удалось отправить — проверьте подключение и попробуйте снова.",
       "session_not_found": "Сессия «{{name}}» не найдена",
       "session_options": "Параметры сессии",
       "show_sessions": "Показать сессии",
@@ -9736,7 +9737,8 @@
       "what_can_i_do_for_you": "Чем могу помочь?",
       "worktree_creation_returned_no_path": "Создание worktree не вернуло путь",
       "loading_earlier_messages": "Загрузка предыдущих сообщений…",
-      "send_failed_with_error": "Не удалось отправить: {{error}}"
+      "send_failed_with_error": "Не удалось отправить: {{error}}",
+      "delivery_unconfirmed": "Доставка не подтверждена — ваш текст возвращён в поле ввода; проверьте переписку, прежде чем отправлять снова."
     },
     "chatSidebar": {
       "1_skipped_currently_selected": "(1 пропущена — выбрана сейчас)",

@@ -9436,6 +9436,7 @@
       "return_to_split_view": "Zur geteilten Ansicht zurückkehren",
       "scroll_to_bottom": "Nach unten scrollen",
       "send_failed": "Senden fehlgeschlagen",
+      "send_failed_connection": "Senden fehlgeschlagen — prüfe deine Verbindung und versuche es erneut.",
       "session_not_found": "Sitzung „{{name}}“ nicht gefunden",
       "session_options": "Sitzungsoptionen",
       "show_sessions": "Sitzungen anzeigen",
@@ -9468,7 +9469,8 @@
       "what_can_i_do_for_you": "Was kann ich für Sie tun?",
       "worktree_creation_returned_no_path": "Die Worktree-Erstellung hat keinen Pfad zurückgegeben",
       "loading_earlier_messages": "Frühere Nachrichten werden geladen…",
-      "send_failed_with_error": "Senden fehlgeschlagen: {{error}}"
+      "send_failed_with_error": "Senden fehlgeschlagen: {{error}}",
+      "delivery_unconfirmed": "Zustellung nicht bestätigt — dein Text steht wieder im Eingabefeld; prüfe den Verlauf, bevor du erneut sendest."
     },
     "chatSidebar": {
       "1_skipped_currently_selected": "(1 übersprungen — aktuell ausgewählt)",

@@ -9570,6 +9570,7 @@
       "return_to_split_view": "Torna alla vista divisa",
       "scroll_to_bottom": "Scorri in fondo",
       "send_failed": "Invio non riuscito",
+      "send_failed_connection": "Invio non riuscito: controlla la connessione e riprova.",
       "session_not_found": "Sessione \"{{name}}\" non trovata",
       "session_options": "Opzioni della sessione",
       "show_sessions": "Mostra sessioni",
@@ -9602,7 +9603,8 @@
       "what_can_i_do_for_you": "Cosa posso fare per te?",
       "worktree_creation_returned_no_path": "La creazione del worktree non ha restituito alcun percorso",
       "loading_earlier_messages": "Caricamento dei messaggi precedenti…",
-      "send_failed_with_error": "Invio non riuscito: {{error}}"
+      "send_failed_with_error": "Invio non riuscito: {{error}}",
+      "delivery_unconfirmed": "Consegna non confermata: il testo è tornato nel campo di scrittura; controlla la conversazione prima di inviarlo di nuovo."
     },
     "chatSidebar": {
       "1_skipped_currently_selected": "(1 saltata — attualmente selezionata)",

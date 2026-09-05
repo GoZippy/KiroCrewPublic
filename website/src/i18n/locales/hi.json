@@ -9436,6 +9436,7 @@
       "return_to_split_view": "स्प्लिट व्यू में वापस जाएँ",
       "scroll_to_bottom": "नीचे तक स्क्रॉल करें",
       "send_failed": "भेजना विफल",
+      "send_failed_connection": "भेजा नहीं जा सका — अपना कनेक्शन जांचो और फिर से कोशिश करो।",
       "session_not_found": "सत्र \"{{name}}\" नहीं मिला",
       "session_options": "सत्र विकल्प",
       "show_sessions": "सेशन दिखाएँ",
@@ -9468,7 +9469,8 @@
       "what_can_i_do_for_you": "मैं आपके लिए क्या कर सकता हूँ?",
       "worktree_creation_returned_no_path": "वर्कट्री बनाने पर कोई पथ नहीं मिला",
       "loading_earlier_messages": "पुराने संदेश लोड हो रहे हैं…",
-      "send_failed_with_error": "भेजना विफल: {{error}}"
+      "send_failed_with_error": "भेजना विफल: {{error}}",
+      "delivery_unconfirmed": "डिलीवरी की पुष्टि नहीं हुई — तुम्हारा टेक्स्ट इनपुट बॉक्स में वापस आ गया है; दोबारा भेजने से पहले बातचीत देखो।"
     },
     "chatSidebar": {
       "1_skipped_currently_selected": "(1 छोड़ा गया — अभी चुना हुआ)",
