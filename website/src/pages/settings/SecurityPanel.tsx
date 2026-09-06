@@ -688,6 +688,7 @@ const SCOPE_PLANE: Record<string, GovPlaneKey> = {
   'network.egress': 'io',
   channels: 'channels',
   approval_mode: 'modes',
+  approval_modes: 'modes',
   'sandbox.min_level': 'modes',
 }
 
