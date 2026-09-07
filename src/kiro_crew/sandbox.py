@@ -5085,6 +5085,32 @@ def wsl_namespace_argv(
     identity = _resolve_wsl2_identity(distro)
     if identity is None:
         raise RuntimeError(f"could not resolve uid/gid/home inside WSL2 distro {distro!r}")
+    if identity[0] == 0:
+        # The native Linux backend's own invariant (_build_launcher_script's
+        # docstring: "the child retains the real UID/GID -- no UID 0, no UID
+        # 65534") holds because unshare(CLONE_NEWUSER)'s single-uid map makes
+        # every root-owned path component resolve to the overflow uid inside
+        # the child. There is no analogous confinement here -- this backend's
+        # whole premise is TRUSTING the guest's own reported identity to
+        # build hidden_dirs/readonly_dirs -- so a guest that reports uid=0
+        # can simply unmount or chmod around whatever the launcher script
+        # hides. WSL2 defaults every distro to a non-root user; uid=0 here
+        # means an operator explicitly set a root default user (or the
+        # distro is misconfigured), and "sandboxed as root" is not isolation
+        # either way, so this fails closed rather than building a launcher
+        # a root guest could defeat.
+        logger.warning(
+            "SECURITY: refusing to sandbox via WSL2 distro %r: guest identity "
+            "resolved to uid=0 (root), which the launcher's hidden/read-only "
+            "bind-mount scheme cannot confine",
+            distro,
+        )
+        raise RuntimeError(
+            f"WSL2 distro {distro!r} reports uid=0 (root) as its own user -- "
+            "refusing to sandbox: a root guest can bypass the hidden/"
+            "read-only bind mounts this backend relies on for isolation. "
+            "Configure the distro with a non-root default user and retry."
+        )
 
     if not _verify_wsl2_drvfs_mount(distro):
         raise RuntimeError(

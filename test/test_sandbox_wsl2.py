@@ -623,6 +623,16 @@ def test_wsl_namespace_argv_fails_closed_when_drvfs_unverifiable(monkeypatch):
         sb.wsl_namespace_argv(["/bin/bash", "-c", "echo hi"], distro="Ubuntu-26.04")
 
 
+def test_wsl_namespace_argv_fails_closed_on_root_guest_identity(monkeypatch):
+    """A guest reporting uid=0 can unmount or chmod around whatever the
+    launcher hides, so this backend's whole trust-the-guest-identity premise
+    breaks -- refuse rather than build a launcher a root guest could defeat."""
+    _stub_wsl_namespace_deps(monkeypatch)
+    monkeypatch.setattr(sb, "_resolve_wsl2_identity", lambda distro: (0, 0, "/root"))
+    with pytest.raises(RuntimeError, match="uid=0"):
+        sb.wsl_namespace_argv(["/bin/bash", "-c", "echo hi"], distro="Ubuntu-26.04")
+
+
 def test_wsl_namespace_argv_stages_the_launcher_in_one_round_trip(monkeypatch):
     """Two separate wsl.exe calls (create, then write) left an empty,
     discoverable file for a same-UID sibling to race between them. Staging
