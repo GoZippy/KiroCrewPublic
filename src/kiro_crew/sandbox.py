@@ -3829,7 +3829,16 @@ def _build_launcher_script(
     # load-bearing, not redundant — dropping it would let a tree a caller
     # re-exposed read-only grow a writable window through this parameter
     # (pinned by test_launcher_refuses_carveout_inside_unhidden_tree).
-    runtime_parents = list(_voice_runtime_parent_paths())
+    # Builder-host paths (see the `identity is None` guard on `readonly_dirs`
+    # above): under WSL2 the guest's translated runtime-parent equivalent is
+    # already folded into `readonly_dirs` via the caller's `extra_readonly_dirs`,
+    # so resolving this again here would both leak a Windows path into the
+    # guest script and violate the "identity implies no builder-host
+    # resolutions" contract. An empty `carveable_parents` is safe: no WSL2
+    # caller passes `extra_writable_dirs`, and `subtree_guards` below simply
+    # keeps every `readonly_dirs` entry guarded instead of excluding the
+    # (here, nonexistent) runtime-parent subset.
+    runtime_parents = [] if identity is not None else list(_voice_runtime_parent_paths())
     writable_json = json.dumps(
         _writable_carveout_spellings(
             extra_writable_dirs,
@@ -4872,6 +4881,8 @@ def _writable_carveout_spellings(
             continue
         approved.extend(spellings)
     return list(dict.fromkeys(approved))
+
+
 # ── Backend: WSL2 namespace sandbox (Windows only) ──
 #
 # The Windows analogue of namespace_argv above: reuses _build_launcher_script
