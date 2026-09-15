@@ -122,11 +122,14 @@ class DumpFile:
         pass
 
     if sys.platform == "win32":
+
         @property
         def name(self) -> str:
             """Provide the file path as ``name`` for diagnostics."""
             return str(self._path)
+
     else:
+
         @property
         def name(self) -> str:
             return str(self._path)
@@ -776,11 +779,7 @@ def pid_identity_alive(pid: int, pid_domain: str | None, start_id: str | None) -
         # Before the own-PID shortcut: a restarted gateway can be handed the
         # crashed one's PID, and then "this process" is NOT the writer.
         current = _pid_start_id(pid)
-        if (
-            current is not None
-            and _start_ids_comparable(start_id, current)
-            and current != start_id
-        ):
+        if current is not None and _start_ids_comparable(start_id, current) and current != start_id:
             return False
     if pid == os.getpid():
         return True
@@ -840,3 +839,73 @@ def dump_replay_lines(
         result.append(ln)
         total += len(ln)
     return result, False
+
+
+#: Marker recording the identity of the gateway process that last completed
+#: startup. Lives beside the dumps because it answers a question only a dump
+#: reader asks, and it is swept by the same data-home lifecycle.
+HEALTHY_MARKER_NAME = "last-healthy-boot"
+
+
+def _healthy_marker_path(dumps_dir: Path | None = None) -> Path:
+    return (dumps_dir or get_dumps_dir()) / HEALTHY_MARKER_NAME
+
+
+def record_healthy_boot(dumps_dir: Path | None = None) -> None:
+    """Record that THIS process reached a serving state.
+
+    Written once, when the dashboard publishes ``DashboardState.ready``. The
+    content is this process's own ``(pid, domain, start_id)`` — the same
+    identity triple a dump header carries — so a later boot can ask whether
+    the instance that wrote a given dump had ever finished starting up.
+
+    Never raises: the marker is an optimisation for the NEXT boot, and a data
+    home that cannot take the write must not fail a gateway that is otherwise
+    healthy. A missing marker reads as "did not reach healthy", which is the
+    conservative answer.
+    """
+    try:
+        pid = os.getpid()
+        line = f"{pid} {_pid_domain()} {_pid_start_id(pid) or '-'}\n"
+        path = _healthy_marker_path(dumps_dir)
+        tmp = path.with_name(f"{path.name}.{pid}.tmp")
+        tmp.write_text(line, encoding="utf-8")
+        # Atomic publish: a concurrent reader sees either the previous marker
+        # or this one, never a half-written line.
+        os.replace(tmp, path)
+    except Exception:  # noqa: BLE001 - never fail a healthy boot over a hint
+        logger.debug("could not record healthy-boot marker", exc_info=True)
+
+
+def dump_owner_reached_healthy(dump_path: Path, dumps_dir: Path | None = None) -> bool:
+    """Did the gateway that wrote *dump_path* ever finish starting up?
+
+    True only when the marker names the SAME process as the dump header: same
+    PID, same PID domain, and a start identity present and equal on both
+    sides. Anything less is False.
+
+    The asymmetry is deliberate. A false True says "the startup battery is
+    exonerated" and removes the stagger, which is exactly how a host that
+    wedges during startup re-wedges; a false False only costs a slower boot,
+    which is the behaviour that exists today. So a missing marker, a missing
+    start identity on either side (a platform
+    :func:`platform_compat.get_process_start_id` does not cover), a recycled
+    PID, or a marker from another host all answer False.
+    """
+    try:
+        owner = _dump_owner(dump_path)
+        if owner is None:
+            return False
+        pid, domain, start_id = owner
+        if domain is None or start_id is None:
+            return False
+        raw = _healthy_marker_path(dumps_dir).read_text(encoding="utf-8").strip()
+        parts = raw.split()
+        if len(parts) != 3:
+            return False
+        m_pid, m_domain, m_start = parts
+        if m_start == "-":
+            return False
+        return m_pid == str(pid) and m_domain == domain and m_start == start_id
+    except Exception:  # noqa: BLE001 - unreadable marker means "not healthy"
+        return False

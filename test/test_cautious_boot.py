@@ -26,7 +26,15 @@ from kiro_crew.dashboard.cautious_boot import (
     initialize,
     pause_before,
 )
-from kiro_crew.dashboard.crash_dump_store import DUMP_PREFIX, DUMP_SUFFIX
+from kiro_crew.dashboard.crash_dump_store import (
+    DUMP_PREFIX,
+    DUMP_SUFFIX,
+    HEALTHY_MARKER_NAME,
+    _pid_domain,
+    _pid_start_id,
+    dump_owner_reached_healthy,
+    record_healthy_boot,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -137,9 +145,7 @@ class TestEvaluate:
 
     def test_old_dump_boots_normally(self, dumps_dir, monkeypatch):
         _create_stacked_dump(dumps_dir, age_secs=RECENT_DUMP_MAX_AGE_SECS + 60)
-        monkeypatch.setattr(
-            resource_status, "probe", _fake_probe(resource_status.POSTURE_CRITICAL)
-        )
+        monkeypatch.setattr(resource_status, "probe", _fake_probe(resource_status.POSTURE_CRITICAL))
         d = _evaluate(cfg=_Cfg(), dumps_dir=dumps_dir)
         assert not d.active
         assert d.delay_secs == 0.0
@@ -156,9 +162,7 @@ class TestEvaluate:
 
     def test_config_off_boots_normally(self, dumps_dir, monkeypatch):
         _create_stacked_dump(dumps_dir)
-        monkeypatch.setattr(
-            resource_status, "probe", _fake_probe(resource_status.POSTURE_CRITICAL)
-        )
+        monkeypatch.setattr(resource_status, "probe", _fake_probe(resource_status.POSTURE_CRITICAL))
         d = _evaluate(cfg=_Cfg(cautious=False), dumps_dir=dumps_dir)
         assert not d.active
         assert "disabled" in d.reason
@@ -283,3 +287,120 @@ class TestConfigKey:
         assert _safe_bool("yes", True) is True  # non-bool → default
         assert _safe_bool(False, True) is False
         assert _safe_bool(None, True) is True
+
+
+# ---------------------------------------------------------------------------
+# The previous instance's readiness — a stall during startup and a stall after
+# hours of service must not be treated the same.
+# ---------------------------------------------------------------------------
+
+
+def _create_owned_dump(
+    dumps_dir: Path, *, pid: int = 4242, domain: str = "host-a", start_id: str = "999"
+) -> Path:
+    """A stacked dump whose header carries the full identity triple."""
+    p = dumps_dir / f"{DUMP_PREFIX}20260810T030000Z{DUMP_SUFFIX}"
+    p.write_text(
+        "# Kiro Crew loop-stall crash dump — opened 20260810T030000Z\n"
+        f"# PID: {pid} @ {domain} start={start_id}\n"
+        "# If thread stacks appear below, the event loop wedged and faulthandler fired.\n"
+        "\n"
+        "Thread 0x00007f0000000000 (most recent call first):\n"
+        '  File "example.py", line 1 in main\n'
+    )
+    return p
+
+
+def _write_marker(
+    dumps_dir: Path, *, pid: int = 4242, domain: str = "host-a", start_id: str = "999"
+) -> None:
+    (dumps_dir / HEALTHY_MARKER_NAME).write_text(f"{pid} {domain} {start_id}\n", encoding="utf-8")
+
+
+class TestPriorInstanceReachedServing:
+    """The recovery boot must not be the slowest one (upstream issue #6590)."""
+
+    def test_healthy_prior_instance_on_a_calm_host_boots_normally(self, dumps_dir, monkeypatch):
+        _create_owned_dump(dumps_dir)
+        _write_marker(dumps_dir)
+        monkeypatch.setattr(resource_status, "probe", _fake_probe(resource_status.POSTURE_AMPLE))
+        d = _evaluate(cfg=_Cfg(), dumps_dir=dumps_dir)
+        assert d.active is False
+        assert d.delay_secs == 0.0
+        assert "reached a serving state" in d.reason
+
+    @pytest.mark.parametrize(
+        "posture", [resource_status.POSTURE_TIGHT, resource_status.POSTURE_CRITICAL]
+    )
+    def test_a_still_pressured_host_keeps_a_mild_stagger(self, dumps_dir, monkeypatch, posture):
+        """Downgraded, not switched off: current pressure is its own signal."""
+        _create_owned_dump(dumps_dir)
+        _write_marker(dumps_dir)
+        monkeypatch.setattr(resource_status, "probe", _fake_probe(posture))
+        d = _evaluate(cfg=_Cfg(), dumps_dir=dumps_dir)
+        assert d.active is True
+        assert d.delay_secs == MILD_DELAY_SECS
+
+    def test_a_startup_wedge_still_gets_maximum_caution(self, dumps_dir, monkeypatch):
+        """No marker — the battery is not exonerated, so nothing changes."""
+        _create_owned_dump(dumps_dir)
+        monkeypatch.setattr(resource_status, "probe", _fake_probe(resource_status.POSTURE_CRITICAL))
+        d = _evaluate(cfg=_Cfg(), dumps_dir=dumps_dir)
+        assert d.active is True
+        assert d.delay_secs == MAX_DELAY_SECS
+
+    def test_a_marker_from_another_process_is_not_this_dumps_evidence(self, dumps_dir, monkeypatch):
+        """A recycled PID or a sibling gateway must not exonerate this battery."""
+        _create_owned_dump(dumps_dir, pid=4242, start_id="999")
+        _write_marker(dumps_dir, pid=4242, start_id="1000")
+        monkeypatch.setattr(resource_status, "probe", _fake_probe(resource_status.POSTURE_CRITICAL))
+        d = _evaluate(cfg=_Cfg(), dumps_dir=dumps_dir)
+        assert d.delay_secs == MAX_DELAY_SECS
+
+    def test_a_marker_from_another_host_is_not_evidence(self, dumps_dir, monkeypatch):
+        _create_owned_dump(dumps_dir, domain="host-a")
+        _write_marker(dumps_dir, domain="host-b")
+        monkeypatch.setattr(resource_status, "probe", _fake_probe(resource_status.POSTURE_CRITICAL))
+        d = _evaluate(cfg=_Cfg(), dumps_dir=dumps_dir)
+        assert d.delay_secs == MAX_DELAY_SECS
+
+    def test_an_unknown_start_identity_is_not_evidence(self, dumps_dir, monkeypatch):
+        """A platform without a start identity falls back to today's behaviour."""
+        _create_owned_dump(dumps_dir)
+        _write_marker(dumps_dir, start_id="-")
+        monkeypatch.setattr(resource_status, "probe", _fake_probe(resource_status.POSTURE_CRITICAL))
+        d = _evaluate(cfg=_Cfg(), dumps_dir=dumps_dir)
+        assert d.delay_secs == MAX_DELAY_SECS
+
+    def test_a_headerless_dump_is_not_evidence(self, dumps_dir, monkeypatch):
+        """The legacy `# PID: n` header carries no identity; stay conservative."""
+        _create_stacked_dump(dumps_dir)
+        _write_marker(dumps_dir, pid=12345)
+        monkeypatch.setattr(resource_status, "probe", _fake_probe(resource_status.POSTURE_CRITICAL))
+        d = _evaluate(cfg=_Cfg(), dumps_dir=dumps_dir)
+        assert d.delay_secs == MAX_DELAY_SECS
+
+
+class TestHealthyMarkerRoundTrip:
+    def test_this_process_recognises_its_own_marker(self, dumps_dir):
+        pid = os.getpid()
+        record_healthy_boot(dumps_dir)
+        dump = _create_owned_dump(
+            dumps_dir, pid=pid, domain=_pid_domain(), start_id=_pid_start_id(pid) or "-"
+        )
+        # Only meaningful where this platform HAS a start identity; where it
+        # does not, the conservative False is the documented answer.
+        expected = _pid_start_id(pid) is not None
+        assert dump_owner_reached_healthy(dump, dumps_dir) is expected
+
+    def test_a_missing_marker_reads_as_not_healthy(self, dumps_dir):
+        dump = _create_owned_dump(dumps_dir)
+        assert dump_owner_reached_healthy(dump, dumps_dir) is False
+
+    def test_recording_never_raises_on_an_unwritable_store(self, tmp_path):
+        record_healthy_boot(tmp_path / "does" / "not" / "exist")
+
+    def test_a_truncated_marker_reads_as_not_healthy(self, dumps_dir):
+        dump = _create_owned_dump(dumps_dir)
+        (dumps_dir / HEALTHY_MARKER_NAME).write_text("4242 host-a\n", encoding="utf-8")
+        assert dump_owner_reached_healthy(dump, dumps_dir) is False

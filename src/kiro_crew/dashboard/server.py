@@ -66,6 +66,7 @@ from kiro_crew.dashboard.crash_dump_store import (
     dump_replay_lines,
     newest_dump_with_stacks,
     open_dump_file,
+    record_healthy_boot,
     rotate_dumps,
     sweep_stale_dumps,
 )
@@ -5014,6 +5015,10 @@ async def start_dashboard(
         state.memory_startup_task = schedule_memory_preparation()
     state.ready = True
     record_boot_to_ready((time.time() - state.start_time) * 1000.0, server="dashboard")
+    # Tells the NEXT boot that this instance got the whole startup battery
+    # away, so a stall from here on does not implicate the battery. Off-loop:
+    # a small write, but the data home can be on network storage.
+    await asyncio.to_thread(record_healthy_boot)
 
     return runner, state
 
@@ -5386,5 +5391,9 @@ async def start_api_server(
         state.memory_startup_task = schedule_memory_preparation()
     state.ready = True
     record_boot_to_ready((time.time() - state.start_time) * 1000.0, server="api")
+    # Tells the NEXT boot that this instance got the whole startup battery
+    # away, so a stall from here on does not implicate the battery. Off-loop:
+    # a small write, but the data home can be on network storage.
+    await asyncio.to_thread(record_healthy_boot)
 
     return runner, state
