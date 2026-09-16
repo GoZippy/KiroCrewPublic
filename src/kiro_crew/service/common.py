@@ -65,10 +65,8 @@ def launchd_live_program() -> "os.PathLike[str]":
     which would leave PATH-resolved subprocesses re-invoking the OLD install
     while the gateway ran the new one.
     """
-    return (
-        Path.home() / "Library" / "Application Support" / "KiroCrew"
-        / "live-gateway"
-    )
+    support = Path.home() / "Library" / "Application Support"
+    return support / "KiroCrew" / "live-gateway"  # brand-ok: on-disk directory name
 
 
 def kirocrew_bin() -> str:
@@ -258,9 +256,7 @@ def headless_auth_warning(environ: "Mapping[str, str] | None" = None) -> str:
     ]
     if _home_override_is_set(environ):
         lines.append("")
-        lines.append(
-            "   KIROCREW_HOME is set here but is also not inherited, so confirm"
-        )
+        lines.append("   KIROCREW_HOME is set here but is also not inherited, so confirm")
         lines.append("   that path is the home the service actually starts with.")
     return "\n".join(lines)
 
@@ -333,6 +329,11 @@ class Platform(enum.Enum):
     # on older systemd (e.g. 219), so we don't ship one.
     SYSTEMD = "systemd"
     LAUNCHD = "launchd"
+    # Per-user Windows Task Scheduler. Unlike SYSTEMD this needs no elevation:
+    # the task is registered in the invoking user's scope, because an
+    # all-users logon trigger requires administrator rights. See
+    # :mod:`kiro_crew.service.windows`.
+    SCHTASKS = "schtasks"
     UNSUPPORTED = "unsupported"
 
 
@@ -341,12 +342,21 @@ def current_platform() -> Platform:
 
     Linux with systemctl on PATH → SYSTEMD.
     macOS with launchctl on PATH → LAUNCHD.
+    Windows with a trusted schtasks.exe → SCHTASKS.
     Anything else → UNSUPPORTED.
     """
     if sys.platform.startswith("linux") and shutil.which("systemctl"):
         return Platform.SYSTEMD
     if sys.platform == "darwin" and shutil.which("launchctl"):
         return Platform.LAUNCHD
+    if sys.platform == "win32":
+        # Resolved through the trusted-system-path table, not PATH: a writable
+        # directory earlier on PATH must not decide that this host supports
+        # services, nor supply the binary that would register one.
+        from kiro_crew import platform_compat
+
+        if platform_compat.trusted_system_bin("schtasks"):
+            return Platform.SCHTASKS
     return Platform.UNSUPPORTED
 
 

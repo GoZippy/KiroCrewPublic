@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-from kiro_crew.service import linux, macos
+from kiro_crew.service import linux, macos, windows
 from kiro_crew.service.common import (
     LAUNCHD_LABEL,
     Platform,
@@ -148,6 +148,24 @@ def install_service() -> int:
         print(f"   Logs:   tail -f {macos.STDOUT_LOG}")
         print("   Remove: kirocrew service uninstall")
         return 0
+    if plat == Platform.SCHTASKS:
+        try:
+            definition = windows.install()
+            # Registering a logon-triggered task does not run it, so a fresh
+            # install would otherwise leave the operator without a gateway
+            # until they next signed in.
+            windows.start()
+        except windows.ServiceInstallError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 1
+        print("✅ kirocrew service installed and started.")
+        print(f"   task: {windows.TASK_NAME}")
+        print(f"   definition: {definition}")
+        _print_headless_auth_warning()
+        print()
+        print("   Status: kirocrew service status")
+        print("   Remove: kirocrew service uninstall")
+        return 0
     _unsupported_message()
     return 2
 
@@ -176,6 +194,17 @@ def uninstall_service() -> int:
         macos.uninstall()
         print("✅ kirocrew service stopped and removed.")
         return 0
+    if plat == Platform.SCHTASKS:
+        try:
+            # Stop first: /Delete removes the registration but does not end a
+            # running instance, which would leave an unsupervised gateway.
+            windows.stop()
+            windows.uninstall()
+        except windows.ServiceInstallError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 1
+        print("✅ kirocrew service stopped and removed.")
+        return 0
     _unsupported_message()
     return 2
 
@@ -189,6 +218,9 @@ def service_status() -> int:
     if plat == Platform.LAUNCHD:
         print(macos.status())
         return 0 if macos.is_active() else 1
+    if plat == Platform.SCHTASKS:
+        print(windows.status())
+        return 0 if windows.is_active() else 1
     _unsupported_message()
     return 2
 
@@ -249,6 +281,8 @@ def is_service_active() -> bool:
         return linux.is_active()
     if plat == Platform.LAUNCHD:
         return macos.is_active()
+    if plat == Platform.SCHTASKS:
+        return windows.is_installed() and windows.is_active()
     return False
 
 
@@ -263,6 +297,11 @@ def stop_service() -> bool:
     if plat == Platform.LAUNCHD:
         if macos.is_active():
             macos.stop()
+            return True
+        return False
+    if plat == Platform.SCHTASKS:
+        if windows.is_active():
+            windows.stop()
             return True
         return False
     return False
@@ -284,6 +323,10 @@ def restart_service() -> bool:
     if plat == Platform.LAUNCHD:
         if macos.is_active():
             return macos.restart()
+        return False
+    if plat == Platform.SCHTASKS:
+        if windows.is_active():
+            return windows.restart()
         return False
     return False
 
@@ -314,6 +357,12 @@ def manual_restart_hint() -> str:
             f"launchctl bootout gui/{uid}/{LAUNCHD_LABEL}; "
             f'launchctl bootstrap gui/{uid} "{macos.PLIST_PATH}"'
         )
+    if plat == Platform.SCHTASKS:
+        # NOT a bare `/Run`: that is the call windows.restart() just made and
+        # got refused. Ending the instance first is the outside-process
+        # recovery, and `&` rather than `&&` so an `/End` refused because
+        # nothing is running still proceeds to the `/Run`.
+        return f'schtasks /End /TN "{windows.TASK_NAME}" & schtasks /Run /TN "{windows.TASK_NAME}"'
     # No platform service manager exists here, so there is no service to have
     # refused the restart; kept total for safety rather than reachability.
     return "kirocrew gateway"
