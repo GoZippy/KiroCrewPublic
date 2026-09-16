@@ -10,6 +10,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
+from kiro_crew import platform_compat
 from kiro_crew.config import loader
 
 SERVICE_NAME = "kirocrew"  # systemd unit name (without .service)
@@ -353,8 +354,6 @@ def current_platform() -> Platform:
         # Resolved through the trusted-system-path table, not PATH: a writable
         # directory earlier on PATH must not decide that this host supports
         # services, nor supply the binary that would register one.
-        from kiro_crew import platform_compat
-
         if platform_compat.trusted_system_bin("schtasks"):
             return Platform.SCHTASKS
     return Platform.UNSUPPORTED
