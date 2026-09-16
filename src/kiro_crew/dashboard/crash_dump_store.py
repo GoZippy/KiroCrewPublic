@@ -46,6 +46,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from kiro_crew import platform_compat
+from kiro_crew.atomic_write import atomic_write
 from kiro_crew.config.paths import config_dir
 from kiro_crew.platform_compat import pid_exists
 
@@ -846,9 +847,38 @@ def dump_replay_lines(
 #: reader asks, and it is swept by the same data-home lifecycle.
 HEALTHY_MARKER_NAME = "last-healthy-boot"
 
+#: The marker is one short line. Bounding the read keeps a marker that grew
+#: -- or was replaced by something large -- from being pulled into memory on
+#: the boot path.
+_HEALTHY_MARKER_MAX_BYTES = 256
+
 
 def _healthy_marker_path(dumps_dir: Path | None = None) -> Path:
     return (dumps_dir or get_dumps_dir()) / HEALTHY_MARKER_NAME
+
+
+def _read_healthy_marker(dumps_dir: Path | None = None) -> str:
+    """Read the marker without letting its path decide how long this takes.
+
+    The marker sits in the data home's dumps directory, which the agent can
+    write to. ``read_text`` would FOLLOW a symlink planted at that name and
+    BLOCK opening a FIFO, and the caller's ``except`` cannot catch a hang --
+    cautious boot would wait forever on a file whose whole purpose is to make
+    boots faster, on the boot path, with no recovery.
+
+    ``O_NOFOLLOW`` refuses the link and ``O_NONBLOCK`` refuses the FIFO. Both
+    are POSIX-only, so the ``S_ISREG`` check is what carries the guarantee
+    everywhere: anything that is not a regular file reads as absent, which is
+    the same conservative answer a missing marker gives.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(_healthy_marker_path(dumps_dir), flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return ""
+        return os.read(fd, _HEALTHY_MARKER_MAX_BYTES).decode("utf-8", "replace")
+    finally:
+        os.close(fd)
 
 
 def record_healthy_boot(dumps_dir: Path | None = None) -> None:
@@ -866,13 +896,15 @@ def record_healthy_boot(dumps_dir: Path | None = None) -> None:
     """
     try:
         pid = os.getpid()
-        line = f"{pid} {_pid_domain()} {_pid_start_id(pid) or '-'}\n"
-        path = _healthy_marker_path(dumps_dir)
-        tmp = path.with_name(f"{path.name}.{pid}.tmp")
-        tmp.write_text(line, encoding="utf-8")
-        # Atomic publish: a concurrent reader sees either the previous marker
-        # or this one, never a half-written line.
-        os.replace(tmp, path)
+        line = f"{pid} {_pid_domain()} {_pid_start_id(pid) or '-'}" + chr(10)
+        # Through atomic_write for its UNIQUE O_EXCL temp file, not just for
+        # the rename. A temp name derived from the PID is fully predictable and
+        # this directory is agent-writable, so a symlink planted at that name
+        # would be FOLLOWED by a plain write and would truncate whatever it
+        # points at, with no recovery -- the same reasoning as the O_NOFOLLOW
+        # on the read side. newline= keeps the byte on disk the one the reader
+        # splits on.
+        atomic_write(_healthy_marker_path(dumps_dir), line, newline="")
     except Exception:  # noqa: BLE001 - never fail a healthy boot over a hint
         logger.debug("could not record healthy-boot marker", exc_info=True)
 
@@ -899,7 +931,7 @@ def dump_owner_reached_healthy(dump_path: Path, dumps_dir: Path | None = None) -
         pid, domain, start_id = owner
         if domain is None or start_id is None:
             return False
-        raw = _healthy_marker_path(dumps_dir).read_text(encoding="utf-8").strip()
+        raw = _read_healthy_marker(dumps_dir).strip()
         parts = raw.split()
         if len(parts) != 3:
             return False
