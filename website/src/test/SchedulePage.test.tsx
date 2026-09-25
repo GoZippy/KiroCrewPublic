@@ -358,7 +358,7 @@ describe('SchedulePage empty-state preset cards', () => {
     // view is itself a dialog now, so a `queryByRole('dialog')` check here
     // would be satisfied only if the thing under test had failed to open.
     await waitFor(() => expect(screen.queryByRole('button', { name: `Use the ${preset.title} template` })).not.toBeInTheDocument())
-    const nameInput = (await screen.findByLabelText('Name')) as HTMLInputElement
+    const nameInput = (await screen.findByLabelText('Name', { selector: 'input' })) as HTMLInputElement
     expect(nameInput.value).toBe(preset.prefill.name)
     const msgInput = screen.getByLabelText('Message') as HTMLTextAreaElement
     expect(msgInput.value).toContain(preset.prefill.message)
@@ -396,7 +396,7 @@ describe('SchedulePage template gallery (non-empty state)', () => {
 
     fireEvent.click(screen.getByText('Error Digest'))
 
-    const nameInput = (await screen.findByLabelText('Name')) as HTMLInputElement
+    const nameInput = (await screen.findByLabelText('Name', { selector: 'input' })) as HTMLInputElement
     expect(nameInput.value).toBe('Error Digest')
     const msgInput = screen.getByLabelText('Message') as HTMLTextAreaElement
     expect(msgInput.value).toContain('production errors')
@@ -638,5 +638,72 @@ describe('SchedulePage job detail dialog', () => {
     await waitFor(() => expect(api.cronHistoryAll).toHaveBeenCalledWith(
       expect.objectContaining({ jobId: 'job-1' }),
     ))
+  })
+})
+
+describe('SchedulePage failed-job error surface', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  // A job's `last_error` is an error by origin, and AUTOSDE names `title=`-only
+  // error text as no surface at all: invisible on touch, unreadable to a screen
+  // reader, no hand-off. These pin both halves of that -- the row must not be
+  // the only place it appears, and the dialog must show it for EVERY job type,
+  // not just the `script` ones the guard used to allow.
+
+  it('a failed row carries NEITHER the error nor a stale earlier success in its title', async () => {
+    // Dropping last_error from the title is only half of it. last_result is the
+    // PREVIOUS run's output, so leaving it on a failed row makes a red Error
+    // badge read "ran ok" on hover -- stale success contradicting the very
+    // state the badge flags.
+    const { api } = await import('../api/client')
+    vi.mocked(api).crons.mockResolvedValue({
+      jobs: [mkJob({ last_status: 'error', last_error: 'boom: exit 1', last_result: 'ran ok' })],
+    })
+
+    renderWithProviders(<SchedulePage />)
+    await screen.findByText('Nightly report')
+
+    const titles = (Array.from(document.querySelectorAll('[title]')) as HTMLElement[]).map(el => el.title)
+    expect(titles.some(t => t.includes('boom: exit 1'))).toBe(false)
+    expect(titles.some(t => t.includes('ran ok'))).toBe(false)
+  })
+
+  it('a row that did NOT fail still carries its output in the title', async () => {
+    const { api } = await import('../api/client')
+    vi.mocked(api).crons.mockResolvedValue({
+      jobs: [mkJob({ last_status: 'ok', last_result: 'ran ok' })],
+    })
+
+    renderWithProviders(<SchedulePage />)
+    await screen.findByText('Nightly report')
+
+    const titles = (Array.from(document.querySelectorAll('[title]')) as HTMLElement[]).map(el => el.title)
+    expect(titles.some(t => t.includes('ran ok'))).toBe(true)
+  })
+
+  it('a failed COMMAND job shows its error in the detail dialog, not only on hover', async () => {
+    // The guard used to be `job?.script && job.last_error`, so a command job --
+    // which has no `script` -- reached this dialog with no error surface at all.
+    const { api } = await import('../api/client')
+    vi.mocked(api).crons.mockResolvedValue({
+      jobs: [mkJob({ command: 'backup.sh', last_status: 'error', last_error: 'disk full' })],
+    })
+
+    renderWithProviders(<SchedulePage />)
+    fireEvent.click(await screen.findByText('Nightly report'))
+
+    expect(await screen.findByTestId('schedule-job-last-error')).toHaveTextContent('disk full')
+  })
+
+  it('a COMMAND job that succeeded shows its output in the detail dialog', async () => {
+    const { api } = await import('../api/client')
+    vi.mocked(api).crons.mockResolvedValue({
+      jobs: [mkJob({ command: 'backup.sh', last_status: 'ok', last_result: '12 files copied' })],
+    })
+
+    renderWithProviders(<SchedulePage />)
+    fireEvent.click(await screen.findByText('Nightly report'))
+
+    expect(await screen.findByText('12 files copied')).toBeInTheDocument()
   })
 })
