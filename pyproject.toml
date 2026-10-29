@@ -28,7 +28,7 @@ kirocrew = "kiro_crew._bootstrap:main"
 [dependency-groups]
 # Pinned dev tool versions for reproducible CI. Bump as needed.
 dev = [
-    "pytest==9.0.3",
+    "pytest==9.2.0",
     "pytest-xdist==3.5.0",
     "pytest-timeout==2.2.0",
     "pytest-asyncio==0.20.3",
@@ -39,7 +39,7 @@ dev = [
     "pytest-split==0.11.0",
     "flake8==7.1.0",
     "mypy==1.14.1",
-    "black==26.3.1",
+    "black==26.10.1",
     "isort==6.0.0",
     # Keep CI on a pinned version of the runtime config validator. The runtime
     # dependency is declared separately in setup.cfg so packaged installs do
@@ -54,7 +54,7 @@ dev = [
     # a pass, so the gate looked covered while nothing exercised it. Declared here
     # so those tests actually run; the runtime dependency stays optional, because
     # a user who does not enable Teams should not carry a crypto library.
-    "PyJWT[crypto]==2.13.0",
+    "PyJWT[crypto]==2.15.0",
     # Test-only, NOT a runtime dependency. test_transcribe.py's pin-completeness
     # test imports imageio_ffmpeg._definitions.FNAME_PER_PLATFORM to derive the
     # authoritative bundled-decoder filename set; without the package installed the
